@@ -90,7 +90,7 @@ function setupSegmented(containerId, onChange) {
 
     // Click to jump
     btns.forEach((btn) => {
-        btn.addEventListener("click", () => {
+        btn.addEventListener("click", (e) => {
             if (btn.classList.contains("active")) return;
             btns.forEach((b) => b.classList.remove("active"));
             btn.classList.add("active");
@@ -99,8 +99,9 @@ function setupSegmented(containerId, onChange) {
         });
     });
 
-    // Draggable thumb — grab anywhere on container
+    // Draggable thumb
     let dragging = false;
+    let moved = false;
     let startX = 0;
     let thumbStartX = 0;
 
@@ -108,23 +109,28 @@ function setupSegmented(containerId, onChange) {
         const btn = e.target.closest(".seg");
         if (!btn) return;
         dragging = true;
+        moved = false;
         startX = e.clientX;
-        const pos = getThumbPos(container, container.querySelector(".seg.active"));
-        thumbStartX = pos.x;
-        thumb.style.transition = "none"; // disable animation during drag
-        thumb.classList.add("dragging");
-        container.setPointerCapture(e.pointerId);
+        const activeBtn = container.querySelector(".seg.active");
+        if (activeBtn) {
+            const pos = getThumbPos(container, activeBtn);
+            thumbStartX = pos.x;
+        }
     });
 
-    container.addEventListener("pointermove", (e) => {
+    window.addEventListener("pointermove", (e) => {
         if (!dragging) return;
         const dx = e.clientX - startX;
+        if (Math.abs(dx) > 3) moved = true; // threshold to distinguish click vs drag
+        if (!moved) return;
+        thumb.style.transition = "none";
+        thumb.classList.add("dragging");
         const containerRect = container.getBoundingClientRect();
         const maxX = containerRect.width - thumb.offsetWidth - 2;
         let newX = Math.max(2, Math.min(maxX, thumbStartX + dx));
         thumb.style.transform = `translateX(${newX}px)`;
 
-        // Find which button the thumb is over
+        // Find which button the thumb center is over
         const thumbCenter = newX + thumb.offsetWidth / 2;
         for (const btn of btns) {
             const btnRect = btn.getBoundingClientRect();
@@ -140,14 +146,15 @@ function setupSegmented(containerId, onChange) {
         }
     });
 
-    container.addEventListener("pointerup", (e) => {
+    window.addEventListener("pointerup", (e) => {
         if (!dragging) return;
         dragging = false;
-        thumb.classList.remove("dragging");
-        // Snap to nearest button with animation
-        thumb.style.transition = "";
-        const active = container.querySelector(".seg.active");
-        if (active) moveThumb(container, active);
+        if (moved) {
+            thumb.classList.remove("dragging");
+            thumb.style.transition = "";
+            const activeBtn = container.querySelector(".seg.active");
+            if (activeBtn) moveThumb(container, activeBtn);
+        }
     });
 }
 

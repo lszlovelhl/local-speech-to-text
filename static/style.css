@@ -168,7 +168,7 @@ body {
 .seg {
     border: none;
     background: transparent;
-    padding: 6px 0;
+    padding: 6px 16px;
     font-size: 13px;
     font-weight: 500;
     color: var(--text-secondary);
@@ -179,9 +179,6 @@ body {
     white-space: nowrap;
     position: relative;
     z-index: 1;
-    flex: 1;
-    min-width: 0;
-    text-align: center;
 }
 .seg:hover { color: var(--text); }
 .seg.active { color: var(--text); }
