@@ -53,15 +53,44 @@
         </section>
 
         <section class="card recorder-card" id="dropZone">
-            <div class="recorder-frame">
-                <div class="recorder-label" id="recorderLabel">💡 灵感迸发</div>
-                <div class="recorder-lights">
-                    <span class="rec-light" id="recLight"></span>
-                    <span class="rec-light rec-light-play" id="playLight"></span>
+            <!-- Cassette Deck -->
+            <div class="cassette">
+                <div class="cassette-top">
+                    <span class="recorder-label" id="recorderLabel">💡 灵感迸发</span>
+                    <div class="recorder-lights">
+                        <span class="rec-light" id="recLight"></span>
+                        <span class="rec-light rec-light-play" id="playLight"></span>
+                    </div>
+                </div>
+
+                <!-- Cassette window with reels -->
+                <div class="cassette-window">
+                    <div class="reel" id="reelLeft">
+                        <div class="reel-hub"></div>
+                        <div class="reel-spoke"></div>
+                        <div class="reel-spoke"></div>
+                        <div class="reel-spoke"></div>
+                    </div>
+                    <div class="cassette-label-strip">
+                        <span id="tapeTitle">STT-001</span>
+                        <span class="tape-time" id="tapeTime">00:00</span>
+                    </div>
+                    <div class="reel" id="reelRight">
+                        <div class="reel-hub"></div>
+                        <div class="reel-spoke"></div>
+                        <div class="reel-spoke"></div>
+                        <div class="reel-spoke"></div>
+                    </div>
+                </div>
+
+                <!-- VU Meter -->
+                <div class="vu-meter">
+                    <div class="vu-bar" id="vuBar"></div>
+                    <div class="vu-labels"><span>MIN</span><span>PEAK</span></div>
                 </div>
             </div>
 
-            <canvas id="waveCanvas" width="400" height="60"></canvas>
+            <canvas id="waveCanvas" width="400" height="50"></canvas>
 
             <div class="mic-visual" id="micVisual">
                 <div class="mic-ring"></div>

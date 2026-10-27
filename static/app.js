@@ -34,6 +34,10 @@ const waveCtx = waveCanvas.getContext("2d");
 const recorderLabel = $("recorderLabel");
 const recLight = $("recLight");
 const playLight = $("playLight");
+const reelLeft = $("reelLeft");
+const reelRight = $("reelRight");
+const vuBar = $("vuBar");
+const tapeTime = $("tapeTime");
 
 // ---------- State ----------
 let currentLang = "auto";
@@ -268,6 +272,9 @@ function setStatus(state, text) {
     micVisual.className = "mic-visual" + (state === "recording" ? " recording" : state === "processing" ? " processing" : "");
     recLight.classList.toggle("on", state === "recording" || state === "processing");
     playLight.classList.toggle("on", state === "done");
+    const spinning = state === "recording" || state === "processing";
+    reelLeft.classList.toggle("spinning", spinning);
+    reelRight.classList.toggle("spinning", spinning);
 }
 
 function setRecordButton(state) {
@@ -322,6 +329,12 @@ function drawWave() {
         waveCtx.fill();
     }
     waveCtx.globalAlpha = 1;
+
+    // VU meter
+    const avg = vadData.reduce((a, b) => a + b, 0) / vadData.length / 255;
+    vuBar.style.width = `${Math.min(100, avg * 200)}%`;
+    tapeTime.textContent = timerText.textContent;
+
     waveRafId = requestAnimationFrame(drawWave);
 }
 
