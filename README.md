@@ -4,28 +4,27 @@
 
 ## 环境要求
 
-- Python 3.12+
+- Python 3.12 或 3.13（**不支持 3.14**，av 库暂无预编译包）
 - Chrome / Edge 最新稳定版（Safari 也可）
 - 无需 GPU，普通 CPU 即可运行
-- 首次启动需联网下载模型权重（约 150MB），之后可完全断网运行
+- 首次启动需联网下载模型（约 460MB），之后可完全断网运行
 
 ## 快速启动
 
 ```bash
-# 方式一：一键启动（自动建 venv、装依赖、开浏览器）
+# 一键启动（自动建 venv、装依赖、下模型、开浏览器）
 ./start.sh          # macOS / Linux
 start.bat           # Windows
 
-# 方式二：手动启动
-python3 -m venv .venv
+# 手动启动
+python3.13 -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+bash download_model.sh small     # 下载模型（约 460MB）
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
 浏览器访问 http://127.0.0.1:8000
-
-首次识别时会自动下载 Whisper base 模型（约 150MB），缓存在 `~/.cache/huggingface/`。
 
 ## 运行测试
 
@@ -53,7 +52,7 @@ python -m pytest -m real_model -v
 local-speech-to-text/
 ├── app/
 │   ├── main.py        # FastAPI 路由与入口
-│   ├── asr.py         # ASR 模型封装（faster-whisper）
+│   ├── asr.py         # ASR 模型封装（faster-whisper small）
 │   └── audio.py       # 音频校验与工具
 ├── static/
 │   ├── index.html     # Web 页面
@@ -62,10 +61,12 @@ local-speech-to-text/
 ├── tests/             # pytest 测试（mock + real_model 分离）
 ├── samples/           # 测试音频样本
 ├── docs/              # 设计文档与测试报告
-├── start.sh / start.bat  # 一键启动脚本
+├── models/            # 模型目录（首次运行自动下载，不入 git）
+├── start.sh / start.bat       # 一键启动脚本
+├── download_model.sh / .bat   # 模型下载脚本
 └── requirements.txt
 ```
 
 ## ASR 模型
 
-使用 [faster-whisper](https://github.com/SYSTRAN/faster-whisper)（CTranslate2 后端），base 模型，CPU int8 量化推理。详见 `docs/design.md`。
+使用 [faster-whisper](https://github.com/SYSTRAN/faster-whisper) small 模型（244M 参数），CTranslate2 后端，CPU int8 量化推理。模型首次启动时自动从 ModelScope 下载到 `models/faster-whisper-small/`，下载后断网可用。详见 `docs/design.md`。
