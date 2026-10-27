@@ -247,6 +247,8 @@ body.mode-conference .emoji-bg-conf {
     background: linear-gradient(145deg, #3a3a3e, #252528);
     border-radius: 16px;
     padding: 16px;
+    position: relative;
+    overflow: hidden;
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -2px 4px rgba(0,0,0,0.3), 0 4px 16px rgba(0,0,0,0.2);
 }
 .walkman-top {
@@ -288,29 +290,43 @@ body.mode-conference .emoji-bg-conf {
     letter-spacing: 0.5px;
 }
 
-/* Mode stickers on the recorder body */
+/* Mode stickers on body — peel off & fly in */
 .walkman-stickers {
-    display: flex;
-    gap: 6px;
-    margin-bottom: 8px;
-    transition: opacity 0.4s ease, transform 0.4s ease;
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 5;
 }
 .sticker {
-    font-size: 20px;
-    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.4));
+    position: absolute;
+    font-size: 22px;
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,0.4));
+    transition: transform 0.4s ease, opacity 0.4s ease;
 }
 .stickers-conf {
     display: none;
 }
-body.mode-conference .walkman-stickers:not(.stickers-conf) {
-    opacity: 0;
-    transform: translateX(-20px);
-    height: 0;
-    margin: 0;
-    overflow: hidden;
-}
 body.mode-conference .stickers-conf {
-    display: flex;
+    display: block;
+}
+/* Peel off animation — old stickers fly out */
+body.mode-conference .walkman-stickers:not(.stickers-conf) .sticker {
+    animation: peelOff 0.4s ease forwards;
+}
+/* Fly in animation — new stickers stick on */
+body.mode-conference .stickers-conf .sticker {
+    display: block;
+    animation: flyIn 0.4s 0.2s ease backwards;
+}
+@keyframes peelOff {
+    0% { transform: scale(1) rotate(0deg); opacity: 1; }
+    50% { transform: scale(0.8) rotate(-10deg); opacity: 0.7; }
+    100% { transform: scale(0.3) rotate(20deg); opacity: 0; }
+}
+@keyframes flyIn {
+    0% { transform: scale(0.3) rotate(-20deg); opacity: 0; }
+    60% { transform: scale(1.1) rotate(5deg); opacity: 1; }
+    100% { transform: scale(1) rotate(0deg); opacity: 1; }
 }
 
 /* Cassette window */
