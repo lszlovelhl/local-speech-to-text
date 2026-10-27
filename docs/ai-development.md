@@ -13,7 +13,7 @@
 
 1. 阅读题目全部要求，梳理必做功能（F1-F5）与加分项（F6）
 2. 讨论 ASR 模型选型：对比 faster-whisper / openai-whisper / whisper.cpp / Vosk
-3. 确定技术栈：FastAPI + 原生 HTML/CSS/JS + faster-whisper base
+3. 确定技术栈：FastAPI + 原生 HTML/CSS/JS + faster-whisper
 4. 设计项目目录结构，对齐题目要求的统一启动命令和接口格式
 
 ### AI 承担的任务
@@ -25,7 +25,6 @@
 ### 自己做出的关键决策
 
 - **选择 faster-whisper 而非原版 Whisper**：CTranslate2 在 CPU 上快 4 倍，pip 安装无需编译
-- **选择 base 模型而非 small**：普通笔记本 CPU 上速度优先，base 已足够演示
 - **采用懒加载模型**：避免 pytest 启动时触发模型下载
 - **mock 与真实测试分离**：`pytest -q` 秒级完成，真实模型测试单独运行
 - **默认 auto 语言检测**：让 Whisper 自动检测中英文混说，不需要用户手动切换
@@ -65,6 +64,7 @@
 2. 配置 pytest.ini：`-m "not real_model"` 默认跳过真实模型测试
 3. 生成样本音频：macOS `say` 命令合成中英文语音
 4. 验证接口返回格式与题目要求一致
+5. 实机调试依赖安装问题，确保任何人 clone 后一键启动
 
 ### 遇到的问题及解决
 
@@ -74,14 +74,19 @@
 | 样本音频生成 | macOS 内置 `say` + `afconvert` 生成 WAV |
 | 浏览器录音格式是 WebM 而非 WAV | faster-whisper 底层 PyAV 原生支持 WebM/Opus |
 | VAD 在嘈杂环境误触发 | 加浏览器硬件降噪 + 自适应阈值 + 最短说话时长过滤 |
+| HuggingFace 国内连不上（SSL EOF 错误） | 改用 ModelScope（阿里模型站）下载模型，代码优先从本地 `models/` 目录加载 |
+| Python 3.14 下 av 库编译失败（ffmpeg 8.x API 变更） | start.sh 强制检测并使用 Python 3.12/3.13，不支持 3.14 时给出明确报错 |
+| faster-whisper 1.2.1 调用 `av.open(metadata_errors=)` 但 av 19.x 不支持 | 在 asr.py 中加兼容补丁，自动剥离该参数 |
+| base 模型英文识别准确率不足 | 升级到 small 模型（244M 参数），英文加 initial_prompt 上下文提示 |
 
 ## 关于 AI 生成代码的质量确认
 
 - 每个接口都对照题目要求的返回格式验证
 - 异常路径（空文件、坏格式、非法参数）逐一编写测试
 - 前端错误处理区分了权限拒绝和设备缺失两种场景
-- 统一启动命令验证：`pip install -r requirements.txt` + `uvicorn app.main:app`
+- 统一启动命令验证：`./start.sh` 自动建 venv、装依赖、下模型、开浏览器
 - 16 个自动化测试全部通过
+- 实机验证：麦克风录音、文件上传、中英文识别、会议模式均通过
 
 ## 如果继续优化，优先改进
 
