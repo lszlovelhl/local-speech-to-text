@@ -31,6 +31,9 @@ const toast = $("toast");
 const historyList = $("historyList");
 const waveCanvas = $("waveCanvas");
 const waveCtx = waveCanvas.getContext("2d");
+const recorderLabel = $("recorderLabel");
+const recLight = $("recLight");
+const playLight = $("playLight");
 
 // ---------- State ----------
 let currentLang = "auto";
@@ -129,8 +132,10 @@ function escapeHtml(s) {
 function applyModeTheme(mode) {
     if (mode === "conference") {
         document.body.classList.add("mode-conference");
+        recorderLabel.textContent = "🧠 头脑风暴";
     } else {
         document.body.classList.remove("mode-conference");
+        recorderLabel.textContent = "💡 灵感迸发";
     }
 }
 
@@ -261,6 +266,8 @@ function setStatus(state, text) {
     statusBadge.className = `badge ${state}`;
     statusBadge.textContent = text;
     micVisual.className = "mic-visual" + (state === "recording" ? " recording" : state === "processing" ? " processing" : "");
+    recLight.classList.toggle("on", state === "recording" || state === "processing");
+    playLight.classList.toggle("on", state === "done");
 }
 
 function setRecordButton(state) {
@@ -603,3 +610,4 @@ btnClear.addEventListener("click", () => {
 
 // ---------- Init ----------
 loadHistory();
+applyModeTheme("single");

@@ -238,10 +238,45 @@ body.mode-conference .emoji-bg-conf {
 .seg:hover { color: var(--text); }
 .seg.active { color: var(--accent); font-weight: 600; }
 
-/* ===== Recorder ===== */
+/* ===== Recorder Card ===== */
 .recorder-card {
     text-align: center;
-    padding: 24px 20px;
+    padding: 20px;
+    position: relative;
+}
+.recorder-frame {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: var(--result-bg);
+    border: 1px solid var(--border);
+}
+.recorder-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    transition: color 0.3s;
+}
+.recorder-lights {
+    display: flex;
+    gap: 8px;
+}
+.rec-light {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #d1d1d6;
+    transition: background 0.3s, box-shadow 0.3s;
+}
+.rec-light.on {
+    background: var(--red);
+    box-shadow: 0 0 8px var(--red);
+}
+.rec-light-play.on {
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
 }
 
 #waveCanvas {
