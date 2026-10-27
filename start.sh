@@ -28,10 +28,10 @@ export HF_ENDPOINT=https://hf-mirror.com
 echo "=== 安装依赖 ==="
 pip install -r requirements.txt --quiet
 
-# 如果本地没有模型文件，自动下载
-if [ ! -f "models/faster-whisper-base/model.bin" ]; then
-    echo "=== 首次运行，下载 ASR 模型 ==="
-    bash download_model.sh
+# 如果本地没有模型文件，自动下载（默认 small，准确率更高）
+if [ ! -f "models/faster-whisper-small/model.bin" ] && [ ! -f "models/faster-whisper-base/model.bin" ]; then
+    echo "=== 首次运行，下载 ASR 模型 (small) ==="
+    bash download_model.sh small
 fi
 
 echo "=== 启动服务 ==="

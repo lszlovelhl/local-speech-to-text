@@ -2,6 +2,7 @@
 ASR 模型封装：基于 faster-whisper (CTranslate2)，CPU int8 推理。
 支持中英文自动检测（auto 模式）。
 优先从本地 models/ 目录加载模型，避免网络下载。
+优先使用 small 模型（准确率更高）。
 """
 from __future__ import annotations
 
@@ -24,9 +25,14 @@ def _patched_av_open(*args, **kwargs):
 _av.open = _patched_av_open
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-LOCAL_MODEL_DIR = PROJECT_ROOT / "models" / "faster-whisper-base"
 
-MODEL_SIZE = os.environ.get("WHISPER_MODEL", "base")
+# 模型优先级：small > base
+MODEL_DIRS = [
+    PROJECT_ROOT / "models" / "faster-whisper-small",
+    PROJECT_ROOT / "models" / "faster-whisper-base",
+]
+
+MODEL_SIZE = os.environ.get("WHISPER_MODEL", "small")
 
 _model = None
 _model_lock = threading.Lock()
@@ -34,6 +40,13 @@ _model_lock = threading.Lock()
 
 class ModelNotLoadedError(Exception):
     pass
+
+
+def _find_local_model() -> Optional[Path]:
+    for d in MODEL_DIRS:
+        if (d / "model.bin").exists():
+            return d
+    return None
 
 
 def _load_model():
@@ -45,14 +58,13 @@ def _load_model():
             return _model
         from faster_whisper import WhisperModel
 
-        # 优先从本地目录加载模型（随项目附带，无需下载）
-        if LOCAL_MODEL_DIR.exists() and (LOCAL_MODEL_DIR / "model.bin").exists():
-            print(f"[ASR] 从本地加载模型: {LOCAL_MODEL_DIR}")
+        local = _find_local_model()
+        if local:
+            print(f"[ASR] 从本地加载模型: {local}")
             _model = WhisperModel(
-                str(LOCAL_MODEL_DIR), device="cpu", compute_type="int8"
+                str(local), device="cpu", compute_type="int8"
             )
         else:
-            # 本地没有则从 HuggingFace 下载（首次运行）
             print(f"[ASR] 从 HuggingFace 下载模型: {MODEL_SIZE}")
             _model = WhisperModel(
                 MODEL_SIZE, device="cpu", compute_type="int8"
@@ -78,11 +90,19 @@ def transcribe(audio_path: str, language: Optional[str] = None) -> Tuple[str, fl
     model = get_model()
     # auto 或 None → 不传 language，让 Whisper 自动检测
     lang_param = None if language in (None, "auto") else language
+
+    # 英文加初始提示词，帮助模型识别常用词
+    initial_prompt = None
+    if lang_param == "en":
+        initial_prompt = "Hello, this is a clear English speech recording."
+
     segments, info = model.transcribe(
         audio_path,
         language=lang_param,
         beam_size=5,
         vad_filter=True,
+        vad_parameters=dict(min_silence_duration_ms=500),
+        initial_prompt=initial_prompt,
     )
     text_parts = [seg.text.strip() for seg in segments]
     text = " ".join(text_parts).strip()
