@@ -238,32 +238,31 @@ body.mode-conference .emoji-bg-conf {
 .seg:hover { color: var(--text); }
 .seg.active { color: var(--accent); font-weight: 600; }
 
-/* ===== Realistic Cassette Deck ===== */
+/* ===== Portable Cassette Recorder ===== */
 .recorder-card {
     text-align: center;
-    padding: 16px;
-}
-.cassette {
-    background: linear-gradient(145deg, #2a2a2e, #1c1c1e);
-    border-radius: 14px;
     padding: 12px;
-    margin-bottom: 14px;
-    box-shadow: inset 0 2px 8px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.05);
 }
-.cassette-top {
+.walkman {
+    background: linear-gradient(145deg, #3a3a3e, #252528);
+    border-radius: 16px;
+    padding: 16px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -2px 4px rgba(0,0,0,0.3), 0 4px 16px rgba(0,0,0,0.2);
+}
+.walkman-top {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 10px;
-    padding: 0 4px;
+    margin-bottom: 8px;
 }
-.recorder-label {
-    font-size: 12px;
-    font-weight: 600;
-    color: #98989d;
-    letter-spacing: 0.5px;
+.walkman-brand {
+    font-size: 11px;
+    font-weight: 700;
+    color: #636366;
+    letter-spacing: 2px;
+    font-family: "SF Mono", monospace;
 }
-.recorder-lights {
+.walkman-lights {
     display: flex;
     gap: 6px;
 }
@@ -281,20 +280,28 @@ body.mode-conference .emoji-bg-conf {
     background: #30d158;
     box-shadow: 0 0 6px #30d158, 0 0 12px rgba(48,209,88,0.4);
 }
+.walkman-mode {
+    font-size: 12px;
+    font-weight: 600;
+    color: #98989d;
+    margin-bottom: 10px;
+    letter-spacing: 0.5px;
+}
 
 /* Cassette window */
 .cassette-window {
     background: linear-gradient(180deg, #1a1a1c, #2c2c2e);
-    border-radius: 8px;
-    padding: 14px 16px;
+    border-radius: 10px;
+    padding: 14px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     border: 1px solid rgba(255,255,255,0.06);
-    box-shadow: inset 0 2px 6px rgba(0,0,0,0.4);
+    box-shadow: inset 0 2px 8px rgba(0,0,0,0.5);
+    margin-bottom: 10px;
 }
 .reel {
-    width: 44px; height: 44px;
+    width: 40px; height: 40px;
     border-radius: 50%;
     background: #3a3a3c;
     position: relative;
@@ -302,80 +309,153 @@ body.mode-conference .emoji-bg-conf {
     align-items: center;
     justify-content: center;
     box-shadow: inset 0 0 0 2px #48484a;
-    transition: transform 0.1s linear;
 }
 .reel.spinning {
     animation: reelSpin 2s linear infinite;
 }
 .reel-hub {
-    width: 14px; height: 14px;
+    width: 12px; height: 12px;
     border-radius: 50%;
     background: #1c1c1e;
-    box-shadow: inset 0 1px 2px rgba(0,0,0,0.6);
 }
 .reel-spoke {
     position: absolute;
-    width: 2px; height: 18px;
+    width: 2px; height: 16px;
     background: #48484a;
     border-radius: 1px;
 }
 .reel-spoke:nth-child(2) { transform: rotate(60deg); }
 .reel-spoke:nth-child(3) { transform: rotate(120deg); }
 .reel-spoke:nth-child(4) { transform: rotate(180deg); }
-
 @keyframes reelSpin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
 }
-
 .cassette-label-strip {
     flex: 1;
-    margin: 0 16px;
+    margin: 0 14px;
     background: linear-gradient(180deg, #f5f5f0, #e8e8e0);
     border-radius: 4px;
     padding: 8px 10px;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 3px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-}
-#tapeTitle {
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
     color: #1c1c1e;
-    letter-spacing: 1px;
     font-family: "SF Mono", monospace;
 }
 .tape-time {
-    font-size: 10px;
+    font-size: 9px;
     color: #636366;
-    font-family: "SF Mono", monospace;
     font-variant-numeric: tabular-nums;
 }
 
 /* VU Meter */
 .vu-meter {
-    margin-top: 10px;
     background: #1c1c1e;
     border-radius: 6px;
     padding: 6px 10px;
-    position: relative;
+    margin-bottom: 10px;
 }
 .vu-bar {
-    height: 8px;
-    border-radius: 4px;
+    height: 6px;
+    border-radius: 3px;
     background: linear-gradient(90deg, #30d158 0%, #ffd60a 60%, #ff453a 100%);
     width: 0%;
     transition: width 0.15s ease;
-    box-shadow: inset 0 1px 1px rgba(0,0,0,0.2);
 }
 .vu-labels {
     display: flex;
     justify-content: space-between;
-    margin-top: 4px;
-    font-size: 8px;
+    margin-top: 3px;
+    font-size: 7px;
     color: #636366;
     letter-spacing: 1px;
+}
+
+/* Speaker grille */
+.speaker {
+    display: grid;
+    grid-template-columns: repeat(15, 1fr);
+    gap: 4px;
+    padding: 10px;
+    margin-bottom: 10px;
+    background: #1c1c1e;
+    border-radius: 8px;
+}
+.speaker-hole {
+    width: 4px; height: 4px;
+    border-radius: 50%;
+    background: #0a0a0a;
+    box-shadow: inset 0 1px 1px rgba(0,0,0,0.5);
+}
+
+/* Controls */
+.walkman-controls {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+#waveCanvas {
+    width: 100%;
+    max-width: 360px;
+    height: 40px;
+    border-radius: 8px;
+    background: #1c1c1e;
+}
+.walkman-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 28px;
+    border: none;
+    border-radius: 980px;
+    font-size: 15px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.3s;
+    min-height: 44px;
+    justify-content: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.1);
+}
+.walkman-btn:active { transform: scale(0.96); }
+.walkman-btn.idle { background: var(--accent); color: #fff; }
+.walkman-btn.recording { background: #ff453a; color: #fff; animation: btnGlow 2s ease-in-out infinite; }
+.walkman-btn.processing { background: #ff9f0a; color: #fff; cursor: wait; opacity: 0.8; }
+.record-icon {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: currentColor;
+}
+.walkman-btn.recording .record-icon {
+    border-radius: 2px;
+    width: 8px; height: 8px;
+}
+.status-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.badge {
+    padding: 3px 10px;
+    border-radius: 16px;
+    font-size: 12px;
+    font-weight: 500;
+}
+.badge.idle { background: rgba(255,255,255,0.08); color: #98989d; }
+.badge.recording { background: rgba(255,69,58,0.15); color: #ff453a; }
+.badge.processing { background: rgba(255,159,10,0.15); color: #ff9f0a; }
+.badge.done { background: rgba(48,209,88,0.15); color: #30d158; }
+.badge.error { background: rgba(255,69,58,0.15); color: #ff453a; }
+.timer {
+    font-size: 14px;
+    color: #98989d;
+    font-variant-numeric: tabular-nums;
+    font-family: "SF Mono", monospace;
 }
 
 #waveCanvas {

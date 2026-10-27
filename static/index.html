@@ -53,17 +53,21 @@
         </section>
 
         <section class="card recorder-card" id="dropZone">
-            <!-- Cassette Deck -->
-            <div class="cassette">
-                <div class="cassette-top">
-                    <span class="recorder-label" id="recorderLabel">💡 灵感迸发</span>
-                    <div class="recorder-lights">
+            <!-- Portable Cassette Recorder -->
+            <div class="walkman">
+                <!-- Top deck: brand + lights -->
+                <div class="walkman-top">
+                    <div class="walkman-brand">STT-2000</div>
+                    <div class="walkman-lights">
                         <span class="rec-light" id="recLight"></span>
                         <span class="rec-light rec-light-play" id="playLight"></span>
                     </div>
                 </div>
 
-                <!-- Cassette window with reels -->
+                <!-- Mode label -->
+                <div class="walkman-mode" id="recorderLabel">💡 灵感迸发</div>
+
+                <!-- Cassette compartment -->
                 <div class="cassette-window">
                     <div class="reel" id="reelLeft">
                         <div class="reel-hub"></div>
@@ -72,7 +76,7 @@
                         <div class="reel-spoke"></div>
                     </div>
                     <div class="cassette-label-strip">
-                        <span id="tapeTitle">STT-001</span>
+                        <span>STT-001</span>
                         <span class="tape-time" id="tapeTime">00:00</span>
                     </div>
                     <div class="reel" id="reelRight">
@@ -88,28 +92,41 @@
                     <div class="vu-bar" id="vuBar"></div>
                     <div class="vu-labels"><span>MIN</span><span>PEAK</span></div>
                 </div>
+
+                <!-- Speaker grille -->
+                <div class="speaker">
+                    <div class="speaker-hole"></div>
+                    <div class="speaker-hole"></div>
+                    <div class="speaker-hole"></div>
+                    <div class="speaker-hole"></div>
+                    <div class="speaker-hole"></div>
+                    <div class="speaker-hole"></div>
+                    <div class="speaker-hole"></div>
+                    <div class="speaker-hole"></div>
+                    <div class="speaker-hole"></div>
+                    <div class="speaker-hole"></div>
+                    <div class="speaker-hole"></div>
+                    <div class="speaker-hole"></div>
+                    <div class="speaker-hole"></div>
+                    <div class="speaker-hole"></div>
+                    <div class="speaker-hole"></div>
+                </div>
+
+                <!-- Controls -->
+                <div class="walkman-controls">
+                    <canvas id="waveCanvas" width="360" height="40"></canvas>
+                    <button id="btnRecord" class="walkman-btn idle">
+                        <span class="record-icon"></span>
+                        <span id="btnRecordText">开始录音</span>
+                    </button>
+                    <div class="status-row">
+                        <span id="statusBadge" class="badge idle">待机</span>
+                        <span id="timerText" class="timer">00:00</span>
+                    </div>
+                </div>
             </div>
 
-            <canvas id="waveCanvas" width="400" height="50"></canvas>
-
-            <div class="mic-visual" id="micVisual">
-                <div class="mic-ring"></div>
-                <div class="mic-dot"></div>
-            </div>
-
-            <div class="record-btn-row">
-                <button id="btnRecord" class="record-btn idle">
-                    <span class="record-icon"></span>
-                    <span id="btnRecordText">开始录音</span>
-                </button>
-            </div>
-
-            <div class="status-row">
-                <span id="statusBadge" class="badge idle">待机</span>
-                <span id="timerText" class="timer">00:00</span>
-            </div>
-
-            <p id="hintText" class="hint">按空格键开始/停止录音 · 拖拽文件到此处上传</p>
+            <p id="hintText" class="hint" style="margin-top:12px">按空格键开始/停止录音 · 拖拽文件到此处上传</p>
         </section>
 
         <section class="card">

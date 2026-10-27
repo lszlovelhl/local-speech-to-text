@@ -269,7 +269,6 @@ window.addEventListener("resize", () => {
 function setStatus(state, text) {
     statusBadge.className = `badge ${state}`;
     statusBadge.textContent = text;
-    micVisual.className = "mic-visual" + (state === "recording" ? " recording" : state === "processing" ? " processing" : "");
     recLight.classList.toggle("on", state === "recording" || state === "processing");
     playLight.classList.toggle("on", state === "done");
     const spinning = state === "recording" || state === "processing";
@@ -278,7 +277,7 @@ function setStatus(state, text) {
 }
 
 function setRecordButton(state) {
-    btnRecord.className = `record-btn ${state}`;
+    btnRecord.className = `walkman-btn ${state}`;
     btnRecordText.textContent = state === "idle" ? "开始录音" : state === "recording" ? "停止录音" : "识别中…";
 }
 
