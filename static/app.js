@@ -1,8 +1,13 @@
 /**
- * Local Speech-to-Text v2.1
- * - VAD 自适应切片（浏览器降噪 + 自适应阈值 + 最短/最长保护）
- * - 会议模式：持续录音，VAD 检测停嘴自动切片
- * - 单按钮切换：开始/停止 一体化，防止连点
+ * Local Speech-to-Text v2.2
+ * - VAD 自适应切片
+ * - 会议模式实时出字
+ * - 单按钮防连点
+ * - 拖拽上传
+ * - 空格快捷键
+ * - 导出 TXT
+ * - 时间戳分段显示
+ * - 视频音轨提取识别
  */
 
 // ---------- DOM ----------
@@ -11,12 +16,15 @@ const btnRecord = $("btnRecord");
 const btnRecordText = $("btnRecordText");
 const btnUpload = $("btnUpload");
 const btnCopy = $("btnCopy");
+const btnExport = $("btnExport");
 const btnClear = $("btnClear");
 const fileInput = $("fileInput");
+const dropZone = $("dropZone");
 const statusBadge = $("statusBadge");
 const timerText = $("timerText");
 const hintText = $("hintText");
 const resultText = $("resultText");
+const segmentList = $("segmentList");
 const metaLang = $("metaLang");
 const metaDuration = $("metaDuration");
 const metaProcessing = $("metaProcessing");
@@ -34,8 +42,9 @@ let timerInt = null;
 let chunks = [];
 let isRecording = false;
 let isProcessing = false;
+let lastResultText = "";
 
-// VAD 相关
+// VAD
 let audioCtx = null;
 let analyser = null;
 let vadData = null;
@@ -48,7 +57,6 @@ let speechStartTs = 0;
 let currentChunkChunks = [];
 let chunkStartTime = 0;
 
-// VAD 参数
 const VAD_MIN_SPEECH_MS = 300;
 const VAD_MIN_SILENCE_MS = 500;
 const VAD_MAX_CHUNK_MS = 8000;
@@ -85,13 +93,7 @@ function setStatus(state, text) {
 
 function setRecordButton(state) {
     btnRecord.className = `record-btn ${state}`;
-    if (state === "idle") {
-        btnRecordText.textContent = "开始录音";
-    } else if (state === "recording") {
-        btnRecordText.textContent = "停止录音";
-    } else if (state === "processing") {
-        btnRecordText.textContent = "识别中…";
-    }
+    btnRecordText.textContent = state === "idle" ? "开始录音" : state === "recording" ? "停止录音" : "识别中…";
 }
 
 function showToast(msg) {
@@ -106,7 +108,13 @@ function fmtTime(sec) {
     return `${m}:${s}`;
 }
 
-// ---------- VAD 核心 ----------
+function fmtTimestamp(sec) {
+    const m = Math.floor(sec / 60);
+    const s = (sec % 60).toFixed(2).padStart(5, "0");
+    return `${m}:${s}`;
+}
+
+// ---------- VAD ----------
 function initVAD(stream) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     const source = audioCtx.createMediaStreamSource(stream);
@@ -124,15 +132,11 @@ function initVAD(stream) {
 function vadLoop() {
     if (!analyser) return;
     analyser.getByteFrequencyData(vadData);
-
     let sum = 0;
-    for (let i = 0; i < vadData.length; i++) {
-        sum += vadData[i] * vadData[i];
-    }
+    for (let i = 0; i < vadData.length; i++) sum += vadData[i] * vadData[i];
     const rms = Math.sqrt(sum / vadData.length);
     const now = Date.now();
 
-    // 阶段1：测量噪音底噪
     if (isMeasuringNoise) {
         noiseFloorSamples.push(rms);
         if (now - chunkStartTime > VAD_NOISE_MEASURE_MS) {
@@ -145,24 +149,19 @@ function vadLoop() {
         return;
     }
 
-    // 阶段2：说话/静音判定
     const threshold = noiseFloor * VAD_SENSITIVITY;
     const isSpeech = rms > threshold;
-
     if (isSpeech) {
         if (!speechStartTs) speechStartTs = now;
         silenceStartTs = now;
     } else {
-        if (speechStartTs && now - speechStartTs < VAD_MIN_SPEECH_MS) {
-            speechStartTs = 0;
-        }
+        if (speechStartTs && now - speechStartTs < VAD_MIN_SPEECH_MS) speechStartTs = 0;
         if (!silenceStartTs) silenceStartTs = now;
     }
 
     const longEnoughSilence = now - silenceStartTs > VAD_MIN_SILENCE_MS;
     const hasSpoken = speechStartTs !== 0;
-    const chunkDuration = now - chunkStartTime;
-    const maxChunkReached = chunkDuration > VAD_MAX_CHUNK_MS;
+    const maxChunkReached = now - chunkStartTime > VAD_MAX_CHUNK_MS;
 
     if ((hasSpoken && longEnoughSilence) || maxChunkReached) {
         if (currentChunkChunks.length > 0) {
@@ -174,59 +173,40 @@ function vadLoop() {
         speechStartTs = 0;
         silenceStartTs = now;
     }
-
     vadRafId = requestAnimationFrame(vadLoop);
 }
 
 function stopVAD() {
     if (vadRafId) cancelAnimationFrame(vadRafId);
     vadRafId = null;
-    if (audioCtx) {
-        audioCtx.close();
-        audioCtx = null;
-    }
+    if (audioCtx) { audioCtx.close(); audioCtx = null; }
     analyser = null;
 }
 
-// ---------- 录音控制（单按钮） ----------
-btnRecord.addEventListener("click", async () => {
-    if (isProcessing) return;  // 识别中不响应
-    if (isRecording) {
-        stopRecording();
-    } else {
-        await startRecording();
-    }
+// ---------- 录音控制 ----------
+btnRecord.addEventListener("click", () => {
+    if (isProcessing) return;
+    isRecording ? stopRecording() : startRecording();
 });
 
 async function startRecording() {
     try {
         mediaStream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-                noiseSuppression: true,
-                echoCancellation: true,
-                autoGainControl: true,
-            }
+            audio: { noiseSuppression: true, echoCancellation: true, autoGainControl: true }
         });
-
         mediaRecorder = new MediaRecorder(mediaStream);
         chunks = [];
         currentChunkChunks = [];
 
         mediaRecorder.ondataavailable = (e) => {
-            if (e.data.size > 0) {
-                chunks.push(e.data);
-                currentChunkChunks.push(e.data);
-            }
+            if (e.data.size > 0) { chunks.push(e.data); currentChunkChunks.push(e.data); }
         };
-
         mediaRecorder.onstop = () => {
             if (currentMode === "single") {
                 const blob = new Blob(chunks, { type: mediaRecorder.mimeType });
-                const ext = mediaRecorder.mimeType.includes("ogg") ? "ogg" : "webm";
-                submitAudio(blob, `recording.${ext}`);
+                submitAudio(blob, `recording.${mediaRecorder.mimeType.includes("ogg") ? "ogg" : "webm"}`);
             } else if (currentChunkChunks.length > 0) {
-                const blob = new Blob(currentChunkChunks, { type: mediaRecorder.mimeType });
-                submitAudio(blob, "final.webm", true);
+                submitAudio(new Blob(currentChunkChunks, { type: mediaRecorder.mimeType }), "final.webm", true);
             }
             cleanupRecording();
         };
@@ -236,38 +216,21 @@ async function startRecording() {
         isRecording = true;
         setRecordButton("recording");
         setStatus("recording", "录音中");
-        hintText.textContent = currentMode === "conference"
-            ? "会议模式：正在监听，自动检测停嘴…"
-            : "正在录音，点击按钮停止";
+        hintText.textContent = currentMode === "conference" ? "会议模式：正在监听…" : "正在录音，点击按钮或空格停止";
 
-        timerInt = setInterval(() => {
-            timerText.textContent = fmtTime((Date.now() - recordStartTs) / 1000);
-        }, 200);
-
-        if (currentMode === "conference") {
-            initVAD(mediaStream);
-            vadLoop();
-        }
+        timerInt = setInterval(() => { timerText.textContent = fmtTime((Date.now() - recordStartTs) / 1000); }, 200);
+        if (currentMode === "conference") { initVAD(mediaStream); vadLoop(); }
     } catch (err) {
-        if (err.name === "NotAllowedError") {
-            setStatus("error", "权限被拒绝");
-            hintText.textContent = "请在浏览器设置中允许麦克风权限";
-        } else if (err.name === "NotFoundError") {
-            setStatus("error", "无麦克风");
-            hintText.textContent = "未检测到麦克风设备";
-        } else {
-            setStatus("error", "启动失败");
-            hintText.textContent = err.message;
-        }
+        const msgs = { NotAllowedError: "请在浏览器设置中允许麦克风权限", NotFoundError: "未检测到麦克风设备" };
+        setStatus("error", err.name === "NotAllowedError" ? "权限被拒绝" : "启动失败");
+        hintText.textContent = msgs[err.name] || err.message;
         setRecordButton("idle");
     }
 }
 
 function stopRecording() {
     if (vadRafId) cancelAnimationFrame(vadRafId);
-    if (mediaRecorder && mediaRecorder.state !== "inactive") {
-        mediaRecorder.stop();
-    }
+    if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
 }
 
 function cleanupRecording() {
@@ -278,14 +241,37 @@ function cleanupRecording() {
     setRecordButton("idle");
 }
 
-// ---------- Upload ----------
+// ---------- 空格快捷键 ----------
+document.addEventListener("keydown", (e) => {
+    if (e.code === "Space" && !e.repeat && !isProcessing) {
+        e.preventDefault();
+        isRecording ? stopRecording() : startRecording();
+    }
+});
+
+// ---------- 拖拽上传 ----------
+["dragenter", "dragover"].forEach((evt) => {
+    dropZone.addEventListener(evt, (e) => { e.preventDefault(); dropZone.classList.add("drag-over"); });
+});
+["dragleave", "drop"].forEach((evt) => {
+    dropZone.addEventListener(evt, (e) => { e.preventDefault(); dropZone.classList.remove("drag-over"); });
+});
+dropZone.addEventListener("drop", (e) => {
+    const f = e.dataTransfer.files[0];
+    if (f) handleFile(f);
+});
+
+// ---------- 文件上传 ----------
 btnUpload.addEventListener("click", () => fileInput.click());
 fileInput.addEventListener("change", () => {
     const f = fileInput.files[0];
-    if (!f) return;
+    if (f) handleFile(f);
+});
+
+function handleFile(f) {
     fileName.textContent = `${f.name} (${(f.size / 1024).toFixed(0)} KB)`;
     submitAudio(f, f.name);
-});
+}
 
 // ---------- API ----------
 async function submitAudio(blob, filename, isChunk = false) {
@@ -308,18 +294,31 @@ async function submitAudio(blob, filename, isChunk = false) {
         if (isChunk) {
             if (data.text) {
                 resultText.classList.remove("placeholder");
-                const sep = resultText.textContent.endsWith("…") ? "" : " ";
-                resultText.textContent += sep + data.text + " ";
+                resultText.textContent += (resultText.textContent.endsWith("…") ? "" : " ") + data.text + " ";
+                lastResultText = resultText.textContent;
             }
         } else {
             resultText.classList.remove("placeholder");
             resultText.textContent = data.text || "（未识别到语音）";
+            lastResultText = data.text || "";
             metaLang.textContent = data.language;
             metaDuration.textContent = data.duration_seconds;
             metaProcessing.textContent = data.processing_seconds;
             btnCopy.disabled = false;
+            btnExport.disabled = false;
+
+            // 渲染时间戳分段
+            if (data.segments && data.segments.length > 1) {
+                segmentList.classList.remove("hidden");
+                segmentList.innerHTML = data.segments.map((s) =>
+                    `<div class="segment-item"><span class="segment-time">[${fmtTimestamp(s.start)} - ${fmtTimestamp(s.end)}]</span><span class="segment-text">${s.text}</span></div>`
+                ).join("");
+            } else {
+                segmentList.classList.add("hidden");
+            }
+
             setStatus("done", "完成");
-            hintText.textContent = "可以再次录音或上传文件";
+            hintText.textContent = "可以再次录音、上传文件，或按空格键继续";
         }
     } catch (err) {
         if (!isChunk) {
@@ -336,14 +335,30 @@ async function submitAudio(blob, filename, isChunk = false) {
     }
 }
 
-// ---------- Copy / Clear ----------
+// ---------- Copy / Export / Clear ----------
 btnCopy.addEventListener("click", () => {
     if (resultText.classList.contains("placeholder")) return;
     navigator.clipboard.writeText(resultText.textContent).then(() => showToast("已复制"));
 });
 
+btnExport.addEventListener("click", () => {
+    if (!lastResultText) return;
+    const blob = new Blob([lastResultText], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `transcript_${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast("已导出 TXT");
+});
+
 btnClear.addEventListener("click", () => {
     resultText.textContent = "识别文字将显示在这里…";
     resultText.classList.add("placeholder");
+    segmentList.classList.add("hidden");
+    segmentList.innerHTML = "";
     btnCopy.disabled = true;
+    btnExport.disabled = true;
+    lastResultText = "";
 });

@@ -3,6 +3,7 @@ ASR 模型封装：基于 faster-whisper (CTranslate2)，CPU int8 推理。
 支持中英文自动检测（auto 模式）。
 优先从本地 models/ 目录加载模型，避免网络下载。
 优先使用 small 模型（准确率更高）。
+返回带时间戳的分段识别结果。
 """
 from __future__ import annotations
 
@@ -10,7 +11,7 @@ import os
 import threading
 import time
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional
 
 # 国内网络环境下的 HuggingFace 镜像（备用）
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
@@ -35,8 +36,8 @@ MODEL_DIRS = [
 MODEL_SIZE = os.environ.get("WHISPER_MODEL", "small")
 
 _model = None
-_model_lock = threading.Lock()       # 保护模型加载
-_transcribe_lock = threading.Lock()  # 保护识别请求，防止并发崩溃
+_model_lock = threading.Lock()
+_transcribe_lock = threading.Lock()
 
 
 class ModelNotLoadedError(Exception):
@@ -72,7 +73,6 @@ def _load_model():
                     MODEL_SIZE, device="cpu", compute_type="int8"
                 )
         except Exception as e:
-            # 加载失败复位，不缓存坏状态，下次请求重试
             _model = None
             raise ModelNotLoadedError(f"模型加载失败：{e}") from e
         return _model
@@ -82,28 +82,21 @@ def get_model():
     return _load_model()
 
 
-def transcribe(audio_path: str, language: Optional[str] = None) -> Tuple[str, float, str]:
+def transcribe_with_timing(audio_path: str, language: Optional[str] = None) -> dict:
     """
-    语音识别。同一时间只处理一个请求，防止模型并发崩溃。
-
-    Args:
-        audio_path: 音频路径
-        language: "zh" / "en" / "auto" / None（自动检测）
-
-    Returns:
-        (识别文本, 音频时长, 实际检测到的语言)
+    语音识别，返回带时间戳的分段结果。
+    同一时间只处理一个请求，防止模型并发崩溃。
     """
     with _transcribe_lock:
+        t0 = time.perf_counter()
         model = get_model()
-        # auto 或 None → 不传 language，让 Whisper 自动检测
         lang_param = None if language in (None, "auto") else language
 
-        # 英文加初始提示词，帮助模型识别常用词
         initial_prompt = None
         if lang_param == "en":
             initial_prompt = "Hello, this is a clear English speech recording."
 
-        segments, info = model.transcribe(
+        segments_iter, info = model.transcribe(
             audio_path,
             language=lang_param,
             beam_size=5,
@@ -111,19 +104,26 @@ def transcribe(audio_path: str, language: Optional[str] = None) -> Tuple[str, fl
             vad_parameters=dict(min_silence_duration_ms=500),
             initial_prompt=initial_prompt,
         )
-        text_parts = [seg.text.strip() for seg in segments]
+
+        segments = []
+        text_parts = []
+        for seg in segments_iter:
+            text = seg.text.strip()
+            if text:
+                segments.append({
+                    "start": round(seg.start, 2),
+                    "end": round(seg.end, 2),
+                    "text": text,
+                })
+                text_parts.append(text)
+
         text = " ".join(text_parts).strip()
-        detected_lang = info.language if not lang_param else lang_param
-        return text, float(info.duration), detected_lang
+        elapsed = time.perf_counter() - t0
 
-
-def transcribe_with_timing(audio_path: str, language: Optional[str] = None) -> dict:
-    t0 = time.perf_counter()
-    text, duration, detected = transcribe(audio_path, language)
-    elapsed = time.perf_counter() - t0
-    return {
-        "text": text,
-        "language": detected,
-        "duration_seconds": round(duration, 2),
-        "processing_seconds": round(elapsed, 2),
-    }
+        return {
+            "text": text,
+            "language": info.language if not lang_param else lang_param,
+            "duration_seconds": round(float(info.duration), 2),
+            "processing_seconds": round(elapsed, 2),
+            "segments": segments,
+        }

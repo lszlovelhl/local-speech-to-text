@@ -327,6 +327,37 @@ body {
     transform: translateX(-50%) translateY(0);
 }
 
+/* ===== Drag & Drop ===== */
+#dropZone.drag-over {
+    border: 2px dashed var(--accent);
+    background: rgba(0,113,227,0.05);
+}
+
+/* ===== Segment List ===== */
+.segment-list {
+    margin-top: 10px;
+    border-top: 1px solid rgba(0,0,0,0.06);
+    padding-top: 10px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+.segment-list.hidden { display: none; }
+.segment-item {
+    display: flex;
+    gap: 10px;
+    padding: 6px 0;
+    font-size: 13px;
+    line-height: 1.5;
+}
+.segment-time {
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    min-width: 90px;
+    font-family: "SF Mono", monospace;
+}
+.segment-text { color: var(--text); }
+
 /* ===== Mobile: < 480px ===== */
 @media (max-width: 480px) {
     .app { padding: 24px 12px 40px; }

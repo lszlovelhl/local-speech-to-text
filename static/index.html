@@ -10,13 +10,11 @@
     <div class="bg-glow"></div>
 
     <main class="app">
-        <!-- 顶部标题 -->
         <header class="header">
             <h1 class="title">语音识别</h1>
-            <p class="subtitle">本地离线 · 中英文自动识别</p>
+            <p class="subtitle">本地离线 · 中英文自动识别 · 支持视频音轨提取</p>
         </header>
 
-        <!-- 语言与模式选择 -->
         <section class="card">
             <div class="row">
                 <span class="label">识别语言</span>
@@ -35,8 +33,7 @@
             </div>
         </section>
 
-        <!-- 录音控制 -->
-        <section class="card recorder-card">
+        <section class="card recorder-card" id="dropZone">
             <div class="mic-visual" id="micVisual">
                 <div class="mic-ring"></div>
                 <div class="mic-dot"></div>
@@ -54,25 +51,23 @@
                 <span id="timerText" class="timer">00:00</span>
             </div>
 
-            <p id="hintText" class="hint">点击开始录音，说完后点击停止</p>
+            <p id="hintText" class="hint">按空格键开始/停止录音 · 拖拽文件到此处上传</p>
         </section>
 
-        <!-- 文件上传 -->
         <section class="card">
             <div class="upload-row">
-                <input type="file" id="fileInput" accept=".wav,.webm,.ogg,.mp3,.m4a,.flac" hidden>
+                <input type="file" id="fileInput" accept=".wav,.webm,.ogg,.mp3,.m4a,.flac,.mp4,.mov,.mkv,.avi,.m4v" hidden>
                 <button id="btnUpload" class="upload-btn">
                     <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
                         <path d="M10 13V3M10 3L6 7M10 3L14 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                         <path d="M3 13V16.5A1.5 1.5 0 004.5 18h11a1.5 1.5 0 001.5-1.5V13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
                     </svg>
-                    上传音频文件
+                    上传音频/视频文件
                 </button>
                 <span id="fileName" class="file-name"></span>
             </div>
         </section>
 
-        <!-- 结果展示 -->
         <section class="card result-card">
             <div class="result-meta">
                 <span>语言 <strong id="metaLang">auto</strong></span>
@@ -80,8 +75,10 @@
                 <span>耗时 <strong id="metaProcessing">--</strong>s</span>
             </div>
             <div id="resultText" class="result-text placeholder">识别文字将显示在这里…</div>
+            <div id="segmentList" class="segment-list hidden"></div>
             <div class="result-actions">
                 <button id="btnCopy" class="ghost-btn" disabled>复制</button>
+                <button id="btnExport" class="ghost-btn" disabled>导出 TXT</button>
                 <button id="btnClear" class="ghost-btn">清空</button>
             </div>
         </section>

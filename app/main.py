@@ -19,10 +19,13 @@ from app.audio import validate_upload, save_temp_audio, cleanup_temp, AudioValid
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "static"
 
-app = FastAPI(title="Local Speech-to-Text", version="2.1.0")
+app = FastAPI(title="Local Speech-to-Text", version="2.2.0")
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 ALLOWED_LANGUAGES = {"zh", "en", "auto"}
+
+# 支持的视频格式（PyAV 自动提取音轨）
+VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v"}
 
 
 @app.get("/health")
@@ -35,17 +38,17 @@ async def index():
     return FileResponse(str(STATIC_DIR / "index.html"))
 
 
-def _probe_audio(path: str) -> None:
-    """快速探测音频文件是否可解码，不可解码直接报错。"""
+def _probe_media(path: str) -> None:
+    """探测文件是否可解码且包含音频流。"""
     try:
         import av
         with av.open(path, mode="r") as container:
             if not container.streams.audio:
-                raise AudioValidationError("文件中未找到音频流，可能不是有效的音频文件")
+                raise AudioValidationError("文件中未找到音频流，可能不是有效的音视频文件")
     except AudioValidationError:
         raise
     except Exception as e:
-        raise AudioValidationError(f"音频文件无法解码，格式可能损坏：{e}") from e
+        raise AudioValidationError(f"文件无法解码，格式可能损坏：{e}") from e
 
 
 @app.post("/api/transcribe")
@@ -60,18 +63,26 @@ async def transcribe(
         )
 
     content = await file.read()
-    try:
-        validate_upload(file.filename or "audio.wav", content)
-    except AudioValidationError as e:
-        raise HTTPException(status_code=e.status_code, detail=e.message)
+    filename = file.filename or "audio.wav"
+    ext = os.path.splitext(filename)[1].lower()
 
-    ext = os.path.splitext(file.filename or "audio.wav")[1].lower()
+    # 视频文件走单独校验
+    if ext in VIDEO_EXTENSIONS:
+        if len(content) == 0:
+            raise HTTPException(status_code=400, detail="上传文件为空")
+        if len(content) > 50 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="视频文件大小超过限制（最大 50MB）")
+    else:
+        try:
+            validate_upload(filename, content)
+        except AudioValidationError as e:
+            raise HTTPException(status_code=e.status_code, detail=e.message)
+
     temp_path = save_temp_audio(content, ext)
 
     try:
-        # 先探测文件是否可解码，假文件直接报错
         try:
-            _probe_audio(temp_path)
+            _probe_media(temp_path)
         except AudioValidationError as e:
             raise HTTPException(status_code=400, detail=e.message)
 
