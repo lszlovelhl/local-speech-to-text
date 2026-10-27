@@ -187,7 +187,7 @@ function setupSegmented(containerId, onChange) {
         const containerRect = container.getBoundingClientRect();
         const maxX = containerRect.width - thumb.offsetWidth - 2;
         let newX = Math.max(2, Math.min(maxX, thumbStartX + dx));
-        thumb.style.transform = `translateX(${newX}px);`
+        thumb.style.transform = `translateX(${newX}px)`;
 
         const thumbCenter = newX + thumb.offsetWidth / 2;
         for (const btn of btns) {
@@ -251,16 +251,6 @@ function setStatus(state, text) {
 function setRecordButton(state) {
     btnRecord.className = `record-btn ${state}`;
     btnRecordText.textContent = state === "idle" ? "开始录音" : state === "recording" ? "停止录音" : "识别中…";
-}
-
-function resetUI() {
-    isRecording = false;
-    isProcessing = false;
-    clearInterval(timerInt);
-    timerText.textContent = "00:00";
-    setRecordButton("idle");
-    setStatus("idle", "待机");
-    btnUpload.disabled = false;
 }
 
 function showToast(msg) {
@@ -375,9 +365,15 @@ async function startRecording() {
             if (currentMode === "single") {
                 const blob = new Blob(chunks, { type: mediaRecorder.mimeType });
                 submitAudio(blob, `recording.${mediaRecorder.mimeType.includes("ogg") ? "ogg" : "webm"}`, false, duration);
-            } else if (currentChunkChunks.length > 0) {
-                // Conference mode: final chunk
-                submitAudio(new Blob(currentChunkChunks, { type: mediaRecorder.mimeType }), "final.webm", true, duration);
+            } else {
+                // Conference mode: submit final chunk if any
+                if (currentChunkChunks.length > 0) {
+                    submitAudio(new Blob(currentChunkChunks, { type: mediaRecorder.mimeType }), "final.webm", true, duration);
+                }
+                // Save accumulated conference text to history
+                if (lastResultText && !resultText.classList.contains("placeholder")) {
+                    addHistory("conference", lastResultText, duration, []);
+                }
             }
             cleanupRecording();
         };
@@ -388,6 +384,15 @@ async function startRecording() {
         setRecordButton("recording");
         setStatus("recording", "录音中");
         hintText.textContent = currentMode === "conference" ? "会议模式：正在监听…" : "正在录音，点击按钮或空格停止";
+
+        // Clear previous result
+        resultText.textContent = "";
+        resultText.classList.add("placeholder");
+        segmentList.classList.add("hidden");
+        segmentList.innerHTML = "";
+        lastResultText = "";
+        btnCopy.disabled = true;
+        btnExport.disabled = true;
 
         timerInt = setInterval(() => { timerText.textContent = fmtTime((Date.now() - recordStartTs) / 1000); }, 200);
         if (currentMode === "conference") { initVAD(mediaStream); vadLoop(); }
@@ -412,12 +417,9 @@ function cleanupRecording() {
     mediaStream = null;
     isRecording = false;
     setRecordButton("idle");
-    if (currentMode === "single") {
-        // status will be set by submitAudio callback
-    } else {
-        // Conference mode: reset to idle
+    timerText.textContent = "00:00";
+    if (currentMode === "conference") {
         setStatus("idle", "待机");
-        timerText.textContent = "00:00";
         hintText.textContent = "可以再次录音，或按空格键继续";
     }
 }
