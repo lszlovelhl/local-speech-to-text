@@ -12,6 +12,7 @@ from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.concurrency import run_in_threadpool
 
 from app import asr
 from app.audio import validate_upload, save_temp_audio, cleanup_temp, AudioValidationError
@@ -19,13 +20,17 @@ from app.audio import validate_upload, save_temp_audio, cleanup_temp, AudioValid
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "static"
 
-app = FastAPI(title="Local Speech-to-Text", version="2.2.0")
+app = FastAPI(title="Local Speech-to-Text", version="3.0.0")
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 ALLOWED_LANGUAGES = {"zh", "en", "auto"}
 
 # 支持的视频格式（PyAV 自动提取音轨）
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v"}
+
+# 大小限制
+MAX_AUDIO_SIZE = 100 * 1024 * 1024  # 100MB
+MAX_VIDEO_SIZE = 200 * 1024 * 1024  # 200MB
 
 
 @app.get("/health")
@@ -47,8 +52,8 @@ def _probe_media(path: str) -> None:
                 raise AudioValidationError("文件中未找到音频流，可能不是有效的音视频文件")
     except AudioValidationError:
         raise
-    except Exception as e:
-        raise AudioValidationError(f"文件无法解码，格式可能损坏：{e}") from e
+    except Exception:
+        raise AudioValidationError("文件无法解码，格式可能损坏")
 
 
 @app.post("/api/transcribe")
@@ -62,17 +67,27 @@ async def transcribe(
             detail=f"不支持的语言 '{language}'，仅支持 zh / en / auto",
         )
 
-    content = await file.read()
+    # 先通过 Content-Length 头预判大小，避免大文件撑爆内存
     filename = file.filename or "audio.wav"
     ext = os.path.splitext(filename)[1].lower()
+    max_size = MAX_VIDEO_SIZE if ext in VIDEO_EXTENSIONS else MAX_AUDIO_SIZE
 
-    # 视频文件走单独校验
-    if ext in VIDEO_EXTENSIONS:
-        if len(content) == 0:
-            raise HTTPException(status_code=400, detail="上传文件为空")
-        if len(content) > 200 * 1024 * 1024:
-            raise HTTPException(status_code=400, detail="视频文件大小超过限制（最大 200MB）")
-    else:
+    content_length = file.size or 0
+    if content_length > max_size:
+        limit_mb = max_size // 1024 // 1024
+        raise HTTPException(status_code=400, detail=f"文件大小超过限制（最大 {limit_mb}MB）")
+
+    content = await file.read()
+
+    if len(content) == 0:
+        raise HTTPException(status_code=400, detail="上传文件为空")
+
+    # 实际大小校验（双重保险）
+    if len(content) > max_size:
+        limit_mb = max_size // 1024 // 1024
+        raise HTTPException(status_code=400, detail=f"文件大小超过限制（最大 {limit_mb}MB）")
+
+    if ext not in VIDEO_EXTENSIONS:
         try:
             validate_upload(filename, content)
         except AudioValidationError as e:
@@ -86,13 +101,14 @@ async def transcribe(
         except AudioValidationError as e:
             raise HTTPException(status_code=400, detail=e.message)
 
-        result = asr.transcribe_with_timing(temp_path, language)
+        # 在线程池中跑 ASR，不堵事件循环
+        result = await run_in_threadpool(asr.transcribe_with_timing, temp_path, language)
         return JSONResponse(content=result)
     except HTTPException:
         raise
     except asr.ModelNotLoadedError as e:
         raise HTTPException(status_code=503, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"语音识别失败：{str(e)}")
+    except Exception:
+        raise HTTPException(status_code=503, detail="语音识别失败，请检查文件格式")
     finally:
         cleanup_temp(temp_path)
