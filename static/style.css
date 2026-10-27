@@ -68,11 +68,11 @@ body {
     justify-content: space-around;
     align-items: center;
     padding: 5%;
-    opacity: 0.06;
+    opacity: 0.18;
     transition: opacity 0.6s ease, transform 0.6s ease;
 }
 .emoji-bg span {
-    font-size: 48px;
+    font-size: 64px;
     animation: float 6s ease-in-out infinite;
 }
 .emoji-bg span:nth-child(odd) { animation-delay: 1s; }
@@ -94,7 +94,7 @@ body.mode-conference .emoji-bg-single {
 }
 body.mode-conference .emoji-bg-conf {
     transform: translateX(0);
-    opacity: 0.06;
+    opacity: 0.18;
 }
 
 .bg-glow {
