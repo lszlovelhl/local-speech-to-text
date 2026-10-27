@@ -70,8 +70,8 @@ async def transcribe(
     if ext in VIDEO_EXTENSIONS:
         if len(content) == 0:
             raise HTTPException(status_code=400, detail="上传文件为空")
-        if len(content) > 50 * 1024 * 1024:
-            raise HTTPException(status_code=400, detail="视频文件大小超过限制（最大 50MB）")
+        if len(content) > 200 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="视频文件大小超过限制（最大 200MB）")
     else:
         try:
             validate_upload(filename, content)

@@ -9,8 +9,8 @@ from typing import Tuple
 
 # 允许的文件扩展名
 ALLOWED_EXTENSIONS = {".wav", ".webm", ".ogg", ".mp3", ".m4a", ".flac"}
-# 上传大小上限 10MB
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+# 上传大小上限 100MB
+MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
 
 
 class AudioValidationError(Exception):
