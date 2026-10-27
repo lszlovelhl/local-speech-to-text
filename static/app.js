@@ -90,7 +90,7 @@ function saveHistory() {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
 }
 
-function addHistory(mode, text, duration, segments) {
+function addHistory(mode, text, duration, segments, audioData = null) {
     if (!text || !text.trim()) return;
     history.unshift({
         ts: Date.now(),
@@ -98,8 +98,9 @@ function addHistory(mode, text, duration, segments) {
         text: text.trim(),
         duration,
         segments: segments || [],
+        audioData,
     });
-    if (history.length > 50) history = history.slice(0, 50);
+    if (history.length > 20) history = history.slice(0, 20);
     saveHistory();
     renderHistory();
 }
@@ -143,15 +144,33 @@ function renderHistory() {
 
 function openTapeModal(h) {
     const modal = $("tapeModal");
+    modal.classList.remove("closing");
     const d = new Date(h.ts);
     $("modalTitle").textContent = `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,"0")}`;
     $("modalTime").textContent = fmtTime(h.duration || 0);
     $("modalText").textContent = h.text;
+    // Audio playback if available
+    const audio = $("modalAudio");
+    if (h.audioData) {
+        audio.src = h.audioData;
+        audio.style.display = "block";
+    } else {
+        audio.style.display = "none";
+        audio.removeAttribute("src");
+    }
     modal.classList.add("open");
 }
 
-$("modalClose").addEventListener("click", () => $("tapeModal").classList.remove("open"));
-$("tapeModal").querySelector(".tape-modal-backdrop").addEventListener("click", () => $("tapeModal").classList.remove("open"));
+function closeTapeModal() {
+    const modal = $("tapeModal");
+    modal.classList.add("closing");
+    setTimeout(() => {
+        modal.classList.remove("open", "closing");
+    }, 200);
+}
+
+$("modalClose").addEventListener("click", closeTapeModal);
+$("tapeModal").querySelector(".tape-modal-backdrop").addEventListener("click", closeTapeModal);
 
 function escapeHtml(s) {
     return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -463,7 +482,7 @@ async function startRecording() {
             const duration = (Date.now() - recordStartTs) / 1000;
             if (currentMode === "single") {
                 const blob = new Blob(chunks, { type: mediaRecorder.mimeType });
-                submitAudio(blob, `recording.${mediaRecorder.mimeType.includes("ogg") ? "ogg" : "webm"}`, false, duration);
+                submitAudio(blob, `recording.${mediaRecorder.mimeType.includes("ogg") ? "ogg" : "webm"}`, false, duration, blob);
             } else {
                 if (currentChunkChunks.length > 0) {
                     submitAudio(new Blob(currentChunkChunks, { type: mediaRecorder.mimeType }), "final.webm", true);
@@ -554,7 +573,7 @@ function handleFile(f) {
 }
 
 // ---------- API ----------
-async function submitAudio(blob, filename, isChunk = false, duration = 0) {
+async function submitAudio(blob, filename, isChunk = false, duration = 0, audioBlob = null) {
     if (!isChunk) {
         isProcessing = true;
         setRecordButton("processing");
@@ -600,7 +619,18 @@ async function submitAudio(blob, filename, isChunk = false, duration = 0) {
 
             setStatus("done", "完成");
             hintText.textContent = "可以再次录音、上传文件，或按空格键继续";
-            addHistory(currentMode, data.text || "", data.duration_seconds || duration, data.segments || []);
+            // Store audio for short recordings only
+            let audioData = null;
+            if (audioBlob && duration < 30) {
+                try {
+                    audioData = await new Promise((res) => {
+                        const r = new FileReader();
+                        r.onload = () => res(r.result);
+                        r.readAsDataURL(audioBlob);
+                    });
+                } catch {}
+            }
+            addHistory(currentMode, data.text || "", data.duration_seconds || duration, data.segments || [], audioData);
         }
     } catch (err) {
         if (!isChunk) {
