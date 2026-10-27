@@ -9,6 +9,9 @@ import threading
 import time
 from typing import Optional, Tuple
 
+# 国内网络环境下使用 HuggingFace 镜像，首次下载模型时生效
+os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+
 MODEL_SIZE = os.environ.get("WHISPER_MODEL", "base")
 
 _model = None

@@ -11,6 +11,9 @@ fi
 
 source .venv/bin/activate
 
+# 国内镜像加速模型下载
+export HF_ENDPOINT=https://hf-mirror.com
+
 echo "=== 检查依赖 ==="
 pip install -r requirements.txt --quiet
 
