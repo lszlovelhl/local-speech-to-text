@@ -482,6 +482,57 @@ body {
 }
 .segment-text { color: var(--text); }
 
+/* ===== History ===== */
+.history-list {
+    max-height: 300px;
+    overflow-y: auto;
+}
+.history-empty {
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 13px;
+    padding: 20px 0;
+}
+.history-item {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+}
+.history-item:last-child { border-bottom: none; }
+.history-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+    font-size: 12px;
+}
+.tag {
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 11px;
+}
+.tag-single { background: rgba(0,113,227,0.12); color: var(--accent); }
+.tag-conf { background: rgba(255,149,0,0.12); color: var(--orange); }
+.history-time { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.history-dur { color: var(--text-secondary); margin-left: auto; }
+.history-text {
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text);
+}
+.history-segs {
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+}
+.history-seg {
+    display: flex;
+    gap: 8px;
+    padding: 2px 0;
+    color: var(--text-secondary);
+}
+
 /* ===== Mobile: < 480px ===== */
 @media (max-width: 480px) {
     .app { padding: 24px 12px 40px; }

@@ -1,13 +1,10 @@
 /**
- * Local Speech-to-Text v2.2
- * - VAD 自适应切片
- * - 会议模式实时出字
- * - 单按钮防连点
- * - 拖拽上传
- * - 空格快捷键
- * - 导出 TXT
- * - 时间戳分段显示
- * - 视频音轨提取识别
+ * Local Speech-to-Text v3.0
+ * - VAD 自适应切片 / 会议模式实时出字
+ * - 单按钮防连点 / 拖拽上传 / 空格快捷键
+ * - 时间戳分段 / 视频音轨提取
+ * - 历史记录（单次/会议分列，24h自动清除）
+ * - 等宽分段选择器 + 液态玻璃拖动
  */
 
 // ---------- DOM ----------
@@ -31,6 +28,7 @@ const metaProcessing = $("metaProcessing");
 const fileName = $("fileName");
 const micVisual = $("micVisual");
 const toast = $("toast");
+const historyList = $("historyList");
 
 // ---------- State ----------
 let currentLang = "auto";
@@ -57,20 +55,79 @@ let speechStartTs = 0;
 let currentChunkChunks = [];
 let chunkStartTime = 0;
 
+// History
+let history = [];
+const HISTORY_KEY = "stt_history";
+
 const VAD_MIN_SPEECH_MS = 300;
-const VAD_MIN_SILENCE_MS = 500;
-const VAD_MAX_CHUNK_MS = 8000;
+const VAD_MIN_SILENCE_MS = 600;
+const VAD_MAX_CHUNK_MS = 10000;
 const VAD_NOISE_MEASURE_MS = 500;
 const VAD_SENSITIVITY = 2.5;
 
-// ---------- Segmented Control with draggable thumb ----------
+// ---------- History ----------
+function loadHistory() {
+    try {
+        history = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+        // Auto-clear >24h
+        const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+        history = history.filter((h) => h.ts > cutoff);
+        saveHistory();
+    } catch { history = []; }
+    renderHistory();
+}
+
+function saveHistory() {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+}
+
+function addHistory(mode, text, duration, segments) {
+    if (!text || !text.trim()) return;
+    history.unshift({
+        ts: Date.now(),
+        mode,
+        text: text.trim(),
+        duration,
+        segments: segments || [],
+    });
+    if (history.length > 50) history = history.slice(0, 50);
+    saveHistory();
+    renderHistory();
+}
+
+function renderHistory() {
+    if (!historyList) return;
+    if (history.length === 0) {
+        historyList.innerHTML = '<div class="history-empty">暂无记录</div>';
+        return;
+    }
+    historyList.innerHTML = history.map((h, i) => {
+        const time = new Date(h.ts).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+        const modeTag = h.mode === "conference"
+            ? '<span class="tag tag-conf">会议</span>'
+            : '<span class="tag tag-single">单次</span>';
+        const segHtml = (h.segments && h.segments.length > 1)
+            ? `<div class="history-segs">${h.segments.map((s) =>
+                `<div class="history-seg"><span class="segment-time">[${fmtTimestamp(s.start)} - ${fmtTimestamp(s.end)}]</span><span>${s.text}</span></div>`
+            ).join("")}</div>`
+            : "";
+        return `<div class="history-item" data-idx="${i}">
+            <div class="history-head">${modeTag}<span class="history-time">${time}</span><span class="history-dur">${fmtTime(h.duration || 0)}</span></div>
+            <div class="history-text">${escapeHtml(h.text)}</div>
+            ${segHtml}
+        </div>`;
+    }).join("");
+}
+
+function escapeHtml(s) {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// ---------- Segmented Control ----------
 function getThumbPos(container, btn) {
     const btnRect = btn.getBoundingClientRect();
     const containerRect = container.getBoundingClientRect();
-    return {
-        x: btnRect.left - containerRect.left - 2,
-        w: btnRect.width,
-    };
+    return { x: btnRect.left - containerRect.left - 2, w: btnRect.width };
 }
 
 function moveThumb(container, btn) {
@@ -81,16 +138,25 @@ function moveThumb(container, btn) {
     thumb.style.transform = `translateX(${pos.x}px)`;
 }
 
+function equalizeButtons(container) {
+    const btns = container.querySelectorAll(".seg");
+    let maxW = 0;
+    btns.forEach((b) => {
+        b.style.width = "";
+        maxW = Math.max(maxW, b.offsetWidth);
+    });
+    btns.forEach((b) => (b.style.width = maxW + "px"));
+}
+
 function setupSegmented(containerId, onChange) {
     const container = $(containerId);
-    const thumb = container.querySelector(".seg-thumb");
     const btns = Array.from(container.querySelectorAll(".seg"));
+    equalizeButtons(container);
     const active = container.querySelector(".seg.active");
     if (active) moveThumb(container, active);
 
-    // Click to jump
     btns.forEach((btn) => {
-        btn.addEventListener("click", (e) => {
+        btn.addEventListener("click", () => {
             if (btn.classList.contains("active")) return;
             btns.forEach((b) => b.classList.remove("active"));
             btn.classList.add("active");
@@ -99,38 +165,30 @@ function setupSegmented(containerId, onChange) {
         });
     });
 
-    // Draggable thumb
-    let dragging = false;
-    let moved = false;
-    let startX = 0;
-    let thumbStartX = 0;
+    let dragging = false, moved = false, startX = 0, thumbStartX = 0;
 
     container.addEventListener("pointerdown", (e) => {
         const btn = e.target.closest(".seg");
         if (!btn) return;
-        dragging = true;
-        moved = false;
+        dragging = true; moved = false;
         startX = e.clientX;
         const activeBtn = container.querySelector(".seg.active");
-        if (activeBtn) {
-            const pos = getThumbPos(container, activeBtn);
-            thumbStartX = pos.x;
-        }
+        if (activeBtn) thumbStartX = getThumbPos(container, activeBtn).x;
     });
 
     window.addEventListener("pointermove", (e) => {
         if (!dragging) return;
         const dx = e.clientX - startX;
-        if (Math.abs(dx) > 3) moved = true; // threshold to distinguish click vs drag
+        if (Math.abs(dx) > 3) moved = true;
         if (!moved) return;
+        const thumb = container.querySelector(".seg-thumb");
         thumb.style.transition = "none";
         thumb.classList.add("dragging");
         const containerRect = container.getBoundingClientRect();
         const maxX = containerRect.width - thumb.offsetWidth - 2;
         let newX = Math.max(2, Math.min(maxX, thumbStartX + dx));
-        thumb.style.transform = `translateX(${newX}px)`;
+        thumb.style.transform = `translateX(${newX}px);`
 
-        // Find which button the thumb center is over
         const thumbCenter = newX + thumb.offsetWidth / 2;
         for (const btn of btns) {
             const btnRect = btn.getBoundingClientRect();
@@ -146,10 +204,11 @@ function setupSegmented(containerId, onChange) {
         }
     });
 
-    window.addEventListener("pointerup", (e) => {
+    window.addEventListener("pointerup", () => {
         if (!dragging) return;
         dragging = false;
         if (moved) {
+            const thumb = container.querySelector(".seg-thumb");
             thumb.classList.remove("dragging");
             thumb.style.transition = "";
             const activeBtn = container.querySelector(".seg.active");
@@ -168,12 +227,14 @@ setupSegmented("modeGroup", (btn) => {
     hintText.textContent = currentMode === "conference"
         ? "会议模式：持续录音，自动检测停嘴切片"
         : "单次识别：录完一段后识别";
+    // Reset timer on mode switch
+    timerText.textContent = "00:00";
 });
 
-// Reposition thumbs on window resize
 window.addEventListener("resize", () => {
     ["langGroup", "modeGroup"].forEach((id) => {
         const c = $(id);
+        equalizeButtons(c);
         const active = c.querySelector(".seg.active");
         if (active) moveThumb(c, active);
     });
@@ -190,6 +251,16 @@ function setStatus(state, text) {
 function setRecordButton(state) {
     btnRecord.className = `record-btn ${state}`;
     btnRecordText.textContent = state === "idle" ? "开始录音" : state === "recording" ? "停止录音" : "识别中…";
+}
+
+function resetUI() {
+    isRecording = false;
+    isProcessing = false;
+    clearInterval(timerInt);
+    timerText.textContent = "00:00";
+    setRecordButton("idle");
+    setStatus("idle", "待机");
+    btnUpload.disabled = false;
 }
 
 function showToast(msg) {
@@ -223,6 +294,8 @@ function initVAD(stream) {
     noiseFloor = 0;
     chunkStartTime = Date.now();
     currentChunkChunks = [];
+    speechStartTs = 0;
+    silenceStartTs = 0;
 }
 
 function vadLoop() {
@@ -275,7 +348,7 @@ function vadLoop() {
 function stopVAD() {
     if (vadRafId) cancelAnimationFrame(vadRafId);
     vadRafId = null;
-    if (audioCtx) { audioCtx.close(); audioCtx = null; }
+    if (audioCtx) { audioCtx.close().catch(() => {}); audioCtx = null; }
     analyser = null;
 }
 
@@ -298,11 +371,13 @@ async function startRecording() {
             if (e.data.size > 0) { chunks.push(e.data); currentChunkChunks.push(e.data); }
         };
         mediaRecorder.onstop = () => {
+            const duration = (Date.now() - recordStartTs) / 1000;
             if (currentMode === "single") {
                 const blob = new Blob(chunks, { type: mediaRecorder.mimeType });
-                submitAudio(blob, `recording.${mediaRecorder.mimeType.includes("ogg") ? "ogg" : "webm"}`);
+                submitAudio(blob, `recording.${mediaRecorder.mimeType.includes("ogg") ? "ogg" : "webm"}`, false, duration);
             } else if (currentChunkChunks.length > 0) {
-                submitAudio(new Blob(currentChunkChunks, { type: mediaRecorder.mimeType }), "final.webm", true);
+                // Conference mode: final chunk
+                submitAudio(new Blob(currentChunkChunks, { type: mediaRecorder.mimeType }), "final.webm", true, duration);
             }
             cleanupRecording();
         };
@@ -326,6 +401,7 @@ async function startRecording() {
 
 function stopRecording() {
     if (vadRafId) cancelAnimationFrame(vadRafId);
+    vadRafId = null;
     if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
 }
 
@@ -333,8 +409,17 @@ function cleanupRecording() {
     clearInterval(timerInt);
     stopVAD();
     if (mediaStream) mediaStream.getTracks().forEach((t) => t.stop());
+    mediaStream = null;
     isRecording = false;
     setRecordButton("idle");
+    if (currentMode === "single") {
+        // status will be set by submitAudio callback
+    } else {
+        // Conference mode: reset to idle
+        setStatus("idle", "待机");
+        timerText.textContent = "00:00";
+        hintText.textContent = "可以再次录音，或按空格键继续";
+    }
 }
 
 // ---------- 空格快捷键 ----------
@@ -366,11 +451,11 @@ fileInput.addEventListener("change", () => {
 
 function handleFile(f) {
     fileName.textContent = `${f.name} (${(f.size / 1024).toFixed(0)} KB)`;
-    submitAudio(f, f.name);
+    submitAudio(f, f.name, false, 0);
 }
 
 // ---------- API ----------
-async function submitAudio(blob, filename, isChunk = false) {
+async function submitAudio(blob, filename, isChunk = false, duration = 0) {
     if (!isChunk) {
         isProcessing = true;
         setRecordButton("processing");
@@ -390,12 +475,12 @@ async function submitAudio(blob, filename, isChunk = false) {
         if (isChunk) {
             if (data.text) {
                 resultText.classList.remove("placeholder");
-                resultText.textContent += (resultText.textContent.endsWith("…") ? "" : " ") + data.text + " ";
+                resultText.textContent += (resultText.textContent.endsWith("…") || resultText.textContent.endsWith(" ") ? "" : " ") + data.text + " ";
                 lastResultText = resultText.textContent;
             }
         } else {
             resultText.classList.remove("placeholder", "fade-in");
-            void resultText.offsetWidth; // 重触发动画
+            void resultText.offsetWidth;
             resultText.classList.add("fade-in");
             resultText.textContent = data.text || "（未识别到语音）";
             lastResultText = data.text || "";
@@ -405,7 +490,6 @@ async function submitAudio(blob, filename, isChunk = false) {
             btnCopy.disabled = false;
             btnExport.disabled = false;
 
-            // 渲染时间戳分段
             if (data.segments && data.segments.length > 1) {
                 segmentList.classList.remove("hidden");
                 segmentList.innerHTML = data.segments.map((s) =>
@@ -417,6 +501,8 @@ async function submitAudio(blob, filename, isChunk = false) {
 
             setStatus("done", "完成");
             hintText.textContent = "可以再次录音、上传文件，或按空格键继续";
+            // Add to history
+            addHistory(currentMode, data.text || "", data.duration_seconds || duration, data.segments || []);
         }
     } catch (err) {
         if (!isChunk) {
@@ -460,3 +546,6 @@ btnClear.addEventListener("click", () => {
     btnExport.disabled = true;
     lastResultText = "";
 });
+
+// ---------- Init ----------
+loadHistory();
