@@ -9,7 +9,10 @@ if not exist .venv (
 
 call .venv\Scripts\activate.bat
 
-echo === 检查依赖 ===
+REM 国内镜像加速模型下载
+set HF_ENDPOINT=https://hf-mirror.com
+
+echo === 安装依赖 ===
 pip install -r requirements.txt --quiet
 
 echo === 启动服务 ===
