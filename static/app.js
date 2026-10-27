@@ -63,25 +63,78 @@ const VAD_MAX_CHUNK_MS = 8000;
 const VAD_NOISE_MEASURE_MS = 500;
 const VAD_SENSITIVITY = 2.5;
 
-// ---------- Language / Mode ----------
-$("langGroup").addEventListener("click", (e) => {
-    const btn = e.target.closest(".seg");
-    if (!btn) return;
-    $("langGroup").querySelectorAll(".seg").forEach((s) => s.classList.remove("active"));
-    btn.classList.add("active");
+// ---------- Segmented Control with sliding thumb ----------
+function moveThumb(container, btn) {
+    const thumb = container.querySelector(".seg-thumb");
+    const btns = container.querySelectorAll(".seg");
+    const idx = Array.from(btns).indexOf(btn);
+    if (idx < 0 || !thumb) return;
+    // thumb width = button width, positioned at button's left offset
+    const btnRect = btn.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    const left = btnRect.left - containerRect.left - 2; // padding offset
+    thumb.style.width = btnRect.width + "px";
+    thumb.style.transform = `translateX(${left}px)`;
+}
+
+function setupSegmented(containerId, onChange) {
+    const container = $(containerId);
+    const btns = container.querySelectorAll(".seg");
+    // Position thumb on first active
+    const active = container.querySelector(".seg.active");
+    if (active) moveThumb(container, active);
+
+    btns.forEach((btn) => {
+        btn.addEventListener("click", () => {
+            btns.forEach((b) => b.classList.remove("active"));
+            btn.classList.add("active");
+            moveThumb(container, btn);
+            onChange(btn);
+        });
+    });
+
+    // Draggable thumb
+    let dragging = false;
+    container.addEventListener("pointerdown", (e) => {
+        const btn = e.target.closest(".seg");
+        if (!btn) return;
+        dragging = true;
+        btn.setPointerCapture(e.pointerId);
+    });
+    container.addEventListener("pointermove", (e) => {
+        if (!dragging) return;
+        const btn = e.target.closest(".seg");
+        if (btn && !btn.classList.contains("active")) {
+            btns.forEach((b) => b.classList.remove("active"));
+            btn.classList.add("active");
+            moveThumb(container, btn);
+            onChange(btn);
+        }
+    });
+    container.addEventListener("pointerup", (e) => {
+        dragging = false;
+    });
+}
+
+setupSegmented("langGroup", (btn) => {
     currentLang = btn.dataset.lang;
     metaLang.textContent = currentLang;
 });
 
-$("modeGroup").addEventListener("click", (e) => {
-    const btn = e.target.closest(".seg");
-    if (!btn) return;
-    $("modeGroup").querySelectorAll(".seg").forEach((s) => s.classList.remove("active"));
-    btn.classList.add("active");
+setupSegmented("modeGroup", (btn) => {
     currentMode = btn.dataset.mode;
     hintText.textContent = currentMode === "conference"
         ? "会议模式：持续录音，自动检测停嘴切片"
         : "单次识别：录完一段后识别";
+});
+
+// Reposition thumbs on window resize
+window.addEventListener("resize", () => {
+    ["langGroup", "modeGroup"].forEach((id) => {
+        const c = $(id);
+        const active = c.querySelector(".seg.active");
+        if (active) moveThumb(c, active);
+    });
 });
 
 // ---------- Utils ----------
