@@ -290,7 +290,7 @@ body.mode-conference .emoji-bg-conf {
     letter-spacing: 0.5px;
 }
 
-/* Mode stickers on body — peel off & fly in */
+/* Mode stickers on body — like real walkman stickers on the cassette frame */
 .walkman-stickers {
     position: absolute;
     inset: 0;
@@ -300,17 +300,13 @@ body.mode-conference .emoji-bg-conf {
 .sticker {
     position: absolute;
     font-size: 28px;
-    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,0.5));
     transition: transform 0.4s ease, opacity 0.4s ease;
 }
-.sticker:nth-child(1) { transform: rotate(-5deg); }
-.sticker:nth-child(2) { transform: rotate(3deg); }
-.sticker:nth-child(3) { transform: rotate(-8deg); }
-.sticker:nth-child(4) { transform: rotate(6deg); }
-.sticker:nth-child(5) { transform: rotate(-3deg); }
-.sticker:nth-child(6) { transform: rotate(8deg); }
-.sticker:nth-child(7) { transform: rotate(-6deg); }
-.sticker:nth-child(8) { transform: rotate(4deg); }
+.sticker:nth-child(1) { transform: rotate(-8deg); }
+.sticker:nth-child(2) { transform: rotate(5deg); }
+.sticker:nth-child(3) { transform: rotate(6deg); }
+.sticker:nth-child(4) { transform: rotate(-5deg); }
 .stickers-conf {
     display: none;
 }
