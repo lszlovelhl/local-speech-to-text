@@ -288,6 +288,31 @@ body.mode-conference .emoji-bg-conf {
     letter-spacing: 0.5px;
 }
 
+/* Mode stickers on the recorder body */
+.walkman-stickers {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 8px;
+    transition: opacity 0.4s ease, transform 0.4s ease;
+}
+.sticker {
+    font-size: 20px;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.4));
+}
+.stickers-conf {
+    display: none;
+}
+body.mode-conference .walkman-stickers:not(.stickers-conf) {
+    opacity: 0;
+    transform: translateX(-20px);
+    height: 0;
+    margin: 0;
+    overflow: hidden;
+}
+body.mode-conference .stickers-conf {
+    display: flex;
+}
+
 /* Cassette window */
 .cassette-window {
     background: linear-gradient(180deg, #1a1a1c, #2c2c2e);
