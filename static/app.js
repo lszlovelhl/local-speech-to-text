@@ -89,6 +89,7 @@ function setStatus(state, text) {
     statusBadge.className = `badge ${state}`;
     statusBadge.textContent = text;
     micVisual.className = "mic-visual" + (state === "recording" ? " recording" : state === "processing" ? " processing" : "");
+    $("waveform").classList.toggle("active", state === "recording");
 }
 
 function setRecordButton(state) {
@@ -298,7 +299,9 @@ async function submitAudio(blob, filename, isChunk = false) {
                 lastResultText = resultText.textContent;
             }
         } else {
-            resultText.classList.remove("placeholder");
+            resultText.classList.remove("placeholder", "fade-in");
+            void resultText.offsetWidth; // 重触发动画
+            resultText.classList.add("fade-in");
             resultText.textContent = data.text || "（未识别到语音）";
             lastResultText = data.text || "";
             metaLang.textContent = data.language;
