@@ -95,6 +95,8 @@ def transcribe_with_timing(audio_path: str, language: Optional[str] = None) -> d
         initial_prompt = None
         if lang_param == "en":
             initial_prompt = "Hello, this is a clear English speech recording."
+        elif lang_param == "zh":
+            initial_prompt = "你好，这是一段清晰的中文语音录音。"
 
         segments_iter, info = model.transcribe(
             audio_path,
@@ -103,6 +105,7 @@ def transcribe_with_timing(audio_path: str, language: Optional[str] = None) -> d
             vad_filter=True,
             vad_parameters=dict(min_silence_duration_ms=500),
             initial_prompt=initial_prompt,
+            condition_on_previous_text=False,
         )
 
         segments = []

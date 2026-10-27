@@ -7,6 +7,17 @@
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+    <!-- Emoji background layers -->
+    <div class="emoji-bg emoji-bg-single" id="emojiSingle">
+        <span>💡</span><span>✏️</span><span>📝</span><span>🎯</span>
+        <span>🧠</span><span>💬</span><span>📱</span><span>⚡</span>
+        <span>🌙</span><span>☕</span><span>🎵</span><span>💭</span>
+    </div>
+    <div class="emoji-bg emoji-bg-conf" id="emojiConf">
+        <span>👥</span><span>🏛️</span><span>💼</span><span>📊</span>
+        <span>🗣️</span><span>🤝</span><span>📋</span><span>🎤</span>
+        <span>🧩</span><span>🚀</span><span>🔥</span><span>✨</span>
+    </div>
     <div class="bg-glow"></div>
 
     <main class="app">
@@ -36,17 +47,7 @@
         </section>
 
         <section class="card recorder-card" id="dropZone">
-            <div class="waveform" id="waveform">
-                <div class="wave-bar"></div>
-                <div class="wave-bar"></div>
-                <div class="wave-bar"></div>
-                <div class="wave-bar"></div>
-                <div class="wave-bar"></div>
-                <div class="wave-bar"></div>
-                <div class="wave-bar"></div>
-                <div class="wave-bar"></div>
-                <div class="wave-bar"></div>
-            </div>
+            <canvas id="waveCanvas" width="400" height="60"></canvas>
 
             <div class="mic-visual" id="micVisual">
                 <div class="mic-ring"></div>

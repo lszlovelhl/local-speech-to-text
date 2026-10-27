@@ -1,10 +1,10 @@
 /**
- * Local Speech-to-Text v3.0
- * - VAD 自适应切片 / 会议模式实时出字
- * - 单按钮防连点 / 拖拽上传 / 空格快捷键
- * - 时间戳分段 / 视频音轨提取
+ * Local Speech-to-Text v3.1
+ * - 真实音频波形 Canvas 可视化
+ * - 模式主题（单次=蓝色灵感 / 会议=橙色头脑风暴）
+ * - Emoji 背景随模式切换滑入滑出
  * - 历史记录（单次/会议分列，24h自动清除）
- * - 等宽分段选择器 + 液态玻璃拖动
+ * - VAD 自适应切片 / 会议模式实时出字
  */
 
 // ---------- DOM ----------
@@ -29,6 +29,8 @@ const fileName = $("fileName");
 const micVisual = $("micVisual");
 const toast = $("toast");
 const historyList = $("historyList");
+const waveCanvas = $("waveCanvas");
+const waveCtx = waveCanvas.getContext("2d");
 
 // ---------- State ----------
 let currentLang = "auto";
@@ -42,10 +44,11 @@ let isRecording = false;
 let isProcessing = false;
 let lastResultText = "";
 
-// VAD
+// VAD + Waveform
 let audioCtx = null;
 let analyser = null;
 let vadData = null;
+let waveRafId = null;
 let vadRafId = null;
 let noiseFloor = 0;
 let noiseFloorSamples = [];
@@ -69,7 +72,6 @@ const VAD_SENSITIVITY = 2.5;
 function loadHistory() {
     try {
         history = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
-        // Auto-clear >24h
         const cutoff = Date.now() - 24 * 60 * 60 * 1000;
         history = history.filter((h) => h.ts > cutoff);
         saveHistory();
@@ -101,17 +103,17 @@ function renderHistory() {
         historyList.innerHTML = '<div class="history-empty">暂无记录</div>';
         return;
     }
-    historyList.innerHTML = history.map((h, i) => {
+    historyList.innerHTML = history.map((h) => {
         const time = new Date(h.ts).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
         const modeTag = h.mode === "conference"
             ? '<span class="tag tag-conf">会议</span>'
             : '<span class="tag tag-single">单次</span>';
         const segHtml = (h.segments && h.segments.length > 1)
             ? `<div class="history-segs">${h.segments.map((s) =>
-                `<div class="history-seg"><span class="segment-time">[${fmtTimestamp(s.start)} - ${fmtTimestamp(s.end)}]</span><span>${s.text}</span></div>`
+                `<div class="history-seg"><span class="segment-time">[${fmtTimestamp(s.start)} - ${fmtTimestamp(s.end)}]</span><span>${escapeHtml(s.text)}</span></div>`
             ).join("")}</div>`
             : "";
-        return `<div class="history-item" data-idx="${i}">
+        return `<div class="history-item">
             <div class="history-head">${modeTag}<span class="history-time">${time}</span><span class="history-dur">${fmtTime(h.duration || 0)}</span></div>
             <div class="history-text">${escapeHtml(h.text)}</div>
             ${segHtml}
@@ -121,6 +123,15 @@ function renderHistory() {
 
 function escapeHtml(s) {
     return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// ---------- Mode Theme ----------
+function applyModeTheme(mode) {
+    if (mode === "conference") {
+        document.body.classList.add("mode-conference");
+    } else {
+        document.body.classList.remove("mode-conference");
+    }
 }
 
 // ---------- Segmented Control ----------
@@ -224,11 +235,16 @@ setupSegmented("langGroup", (btn) => {
 
 setupSegmented("modeGroup", (btn) => {
     currentMode = btn.dataset.mode;
+    applyModeTheme(currentMode);
     hintText.textContent = currentMode === "conference"
         ? "会议模式：持续录音，自动检测停嘴切片"
         : "单次识别：录完一段后识别";
-    // Reset timer on mode switch
     timerText.textContent = "00:00";
+    // Clear result on mode switch
+    resultText.textContent = "";
+    resultText.classList.add("placeholder");
+    segmentList.classList.add("hidden");
+    lastResultText = "";
 });
 
 window.addEventListener("resize", () => {
@@ -245,7 +261,6 @@ function setStatus(state, text) {
     statusBadge.className = `badge ${state}`;
     statusBadge.textContent = text;
     micVisual.className = "mic-visual" + (state === "recording" ? " recording" : state === "processing" ? " processing" : "");
-    $("waveform").classList.toggle("active", state === "recording");
 }
 
 function setRecordButton(state) {
@@ -271,6 +286,44 @@ function fmtTimestamp(sec) {
     return `${m}:${s}`;
 }
 
+// ---------- Waveform Canvas ----------
+function getWaveColor() {
+    return currentMode === "conference" ? "#ff9500" : "#0071e3";
+}
+
+function drawWave() {
+    if (!analyser) return;
+    analyser.getByteFrequencyData(vadData);
+    const w = waveCanvas.width;
+    const h = waveCanvas.height;
+    waveCtx.clearRect(0, 0, w, h);
+
+    const bars = 40;
+    const barWidth = w / bars;
+    const color = getWaveColor();
+
+    for (let i = 0; i < bars; i++) {
+        const idx = Math.floor((i / bars) * vadData.length);
+        const v = vadData[idx] / 255;
+        const barHeight = Math.max(2, v * h * 0.9);
+        const x = i * barWidth;
+        const y = (h - barHeight) / 2;
+        waveCtx.fillStyle = color;
+        waveCtx.globalAlpha = 0.3 + v * 0.7;
+        waveCtx.beginPath();
+        waveCtx.roundRect(x + 1, y, barWidth - 2, barHeight, 2);
+        waveCtx.fill();
+    }
+    waveCtx.globalAlpha = 1;
+    waveRafId = requestAnimationFrame(drawWave);
+}
+
+function stopWave() {
+    if (waveRafId) cancelAnimationFrame(waveRafId);
+    waveRafId = null;
+    if (waveCtx) waveCtx.clearRect(0, 0, waveCanvas.width, waveCanvas.height);
+}
+
 // ---------- VAD ----------
 function initVAD(stream) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -286,6 +339,7 @@ function initVAD(stream) {
     currentChunkChunks = [];
     speechStartTs = 0;
     silenceStartTs = 0;
+    drawWave(); // start waveform
 }
 
 function vadLoop() {
@@ -338,6 +392,7 @@ function vadLoop() {
 function stopVAD() {
     if (vadRafId) cancelAnimationFrame(vadRafId);
     vadRafId = null;
+    stopWave();
     if (audioCtx) { audioCtx.close().catch(() => {}); audioCtx = null; }
     analyser = null;
 }
@@ -366,11 +421,9 @@ async function startRecording() {
                 const blob = new Blob(chunks, { type: mediaRecorder.mimeType });
                 submitAudio(blob, `recording.${mediaRecorder.mimeType.includes("ogg") ? "ogg" : "webm"}`, false, duration);
             } else {
-                // Conference mode: submit final chunk if any
                 if (currentChunkChunks.length > 0) {
-                    submitAudio(new Blob(currentChunkChunks, { type: mediaRecorder.mimeType }), "final.webm", true, duration);
+                    submitAudio(new Blob(currentChunkChunks, { type: mediaRecorder.mimeType }), "final.webm", true);
                 }
-                // Save accumulated conference text to history
                 if (lastResultText && !resultText.classList.contains("placeholder")) {
                     addHistory("conference", lastResultText, duration, []);
                 }
@@ -462,7 +515,7 @@ async function submitAudio(blob, filename, isChunk = false, duration = 0) {
         isProcessing = true;
         setRecordButton("processing");
         btnUpload.disabled = true;
-        if (currentMode === "single") setStatus("processing", "识别中");
+        setStatus("processing", "识别中");
     }
 
     const fd = new FormData();
@@ -495,7 +548,7 @@ async function submitAudio(blob, filename, isChunk = false, duration = 0) {
             if (data.segments && data.segments.length > 1) {
                 segmentList.classList.remove("hidden");
                 segmentList.innerHTML = data.segments.map((s) =>
-                    `<div class="segment-item"><span class="segment-time">[${fmtTimestamp(s.start)} - ${fmtTimestamp(s.end)}]</span><span class="segment-text">${s.text}</span></div>`
+                    `<div class="segment-item"><span class="segment-time">[${fmtTimestamp(s.start)} - ${fmtTimestamp(s.end)}]</span><span class="segment-text">${escapeHtml(s.text)}</span></div>`
                 ).join("");
             } else {
                 segmentList.classList.add("hidden");
@@ -503,7 +556,6 @@ async function submitAudio(blob, filename, isChunk = false, duration = 0) {
 
             setStatus("done", "完成");
             hintText.textContent = "可以再次录音、上传文件，或按空格键继续";
-            // Add to history
             addHistory(currentMode, data.text || "", data.duration_seconds || duration, data.segments || []);
         }
     } catch (err) {
