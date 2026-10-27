@@ -14,6 +14,15 @@ from typing import Optional, Tuple
 # 国内网络环境下的 HuggingFace 镜像（备用）
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
+# 兼容补丁：新版 faster-whisper 调用 av.open(metadata_errors=...)，
+# 但部分 av 版本不支持该参数，这里自动剥离。
+import av as _av
+_orig_av_open = _av.open
+def _patched_av_open(*args, **kwargs):
+    kwargs.pop("metadata_errors", None)
+    return _orig_av_open(*args, **kwargs)
+_av.open = _patched_av_open
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 LOCAL_MODEL_DIR = PROJECT_ROOT / "models" / "faster-whisper-base"
 

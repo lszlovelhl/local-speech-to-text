@@ -4,10 +4,20 @@
 set -e
 cd "$(dirname "$0")"
 
+# 优先使用 Python 3.13（3.14 太新，av 库无预编译包）
+if command -v python3.13 &>/dev/null; then
+    PY=python3.13
+elif [ -x "/opt/homebrew/bin/python3.13" ]; then
+    PY="/opt/homebrew/bin/python3.13"
+else
+    PY=python3
+fi
+echo "=== 使用 $PY ($($PY --version)) ==="
+
 # 首次运行自动创建 venv
 if [ ! -d ".venv" ]; then
     echo "=== 首次运行，创建虚拟环境 ==="
-    python3 -m venv .venv
+    $PY -m venv .venv
 fi
 
 source .venv/bin/activate
