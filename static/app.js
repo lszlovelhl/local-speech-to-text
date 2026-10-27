@@ -68,6 +68,42 @@ let chunkStartTime = 0;
 // History
 let history = [];
 const HISTORY_KEY = "stt_history";
+let db = null;
+
+// IndexedDB setup
+function initDB() {
+    return new Promise((resolve, reject) => {
+        const req = indexedDB.open("stt_db", 1);
+        req.onupgradeneeded = (e) => {
+            const d = e.target.result;
+            if (!d.objectStoreNames.contains("audio")) {
+                d.createObjectStore("audio", { keyPath: "id" });
+            }
+        };
+        req.onsuccess = (e) => { db = e.target.result; resolve(db); };
+        req.onerror = (e) => reject(e);
+    });
+}
+
+async function saveAudio(id, blob) {
+    if (!db) return;
+    return new Promise((resolve) => {
+        const tx = db.transaction("audio", "readwrite");
+        tx.objectStore("audio").put({ id, blob });
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+    });
+}
+
+async function getAudio(id) {
+    if (!db) return null;
+    return new Promise((resolve) => {
+        const tx = db.transaction("audio", "readonly");
+        const req = tx.objectStore("audio").get(id);
+        req.onsuccess = () => resolve(req.result ? req.result.blob : null);
+        req.onerror = () => resolve(null);
+    });
+}
 
 const VAD_MIN_SPEECH_MS = 300;
 const VAD_MIN_SILENCE_MS = 600;
@@ -90,19 +126,22 @@ function saveHistory() {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
 }
 
-function addHistory(mode, text, duration, segments, audioData = null) {
+function addHistory(mode, text, duration, segments, audioBlob = null) {
     if (!text || !text.trim()) return;
+    const id = Date.now().toString();
     history.unshift({
+        id,
         ts: Date.now(),
         mode,
         text: text.trim(),
         duration,
         segments: segments || [],
-        audioData,
     });
     if (history.length > 20) history = history.slice(0, 20);
     saveHistory();
     renderHistory();
+    // Save audio blob to IndexedDB
+    if (audioBlob) saveAudio(id, audioBlob);
 }
 
 function renderHistory() {
@@ -142,21 +181,23 @@ function renderHistory() {
     });
 }
 
-function openTapeModal(h) {
+async function openTapeModal(h) {
     const modal = $("tapeModal");
     modal.classList.remove("closing");
     const d = new Date(h.ts);
     $("modalTitle").textContent = `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,"0")}`;
     $("modalTime").textContent = fmtTime(h.duration || 0);
     $("modalText").textContent = h.text;
-    // Audio playback if available
+    // Load audio from IndexedDB
     const audio = $("modalAudio");
-    if (h.audioData) {
-        audio.src = h.audioData;
-        audio.style.display = "block";
-    } else {
-        audio.style.display = "none";
-        audio.removeAttribute("src");
+    audio.style.display = "none";
+    audio.removeAttribute("src");
+    if (h.id) {
+        const blob = await getAudio(h.id);
+        if (blob) {
+            audio.src = URL.createObjectURL(blob);
+            audio.style.display = "block";
+        }
     }
     modal.classList.add("open");
 }
@@ -619,18 +660,7 @@ async function submitAudio(blob, filename, isChunk = false, duration = 0, audioB
 
             setStatus("done", "完成");
             hintText.textContent = "可以再次录音、上传文件，或按空格键继续";
-            // Store audio for short recordings only
-            let audioData = null;
-            if (audioBlob && duration < 30) {
-                try {
-                    audioData = await new Promise((res) => {
-                        const r = new FileReader();
-                        r.onload = () => res(r.result);
-                        r.readAsDataURL(audioBlob);
-                    });
-                } catch {}
-            }
-            addHistory(currentMode, data.text || "", data.duration_seconds || duration, data.segments || [], audioData);
+            addHistory(currentMode, data.text || "", data.duration_seconds || duration, data.segments || [], audioBlob);
         }
     } catch (err) {
         if (!isChunk) {
@@ -678,3 +708,4 @@ btnClear.addEventListener("click", () => {
 // ---------- Init ----------
 loadHistory();
 applyModeTheme("single");
+initDB();
