@@ -35,7 +35,8 @@ MODEL_DIRS = [
 MODEL_SIZE = os.environ.get("WHISPER_MODEL", "small")
 
 _model = None
-_model_lock = threading.Lock()
+_model_lock = threading.Lock()       # 保护模型加载
+_transcribe_lock = threading.Lock()  # 保护识别请求，防止并发崩溃
 
 
 class ModelNotLoadedError(Exception):
@@ -56,19 +57,24 @@ def _load_model():
     with _model_lock:
         if _model is not None:
             return _model
-        from faster_whisper import WhisperModel
+        try:
+            from faster_whisper import WhisperModel
 
-        local = _find_local_model()
-        if local:
-            print(f"[ASR] 从本地加载模型: {local}")
-            _model = WhisperModel(
-                str(local), device="cpu", compute_type="int8"
-            )
-        else:
-            print(f"[ASR] 从 HuggingFace 下载模型: {MODEL_SIZE}")
-            _model = WhisperModel(
-                MODEL_SIZE, device="cpu", compute_type="int8"
-            )
+            local = _find_local_model()
+            if local:
+                print(f"[ASR] 从本地加载模型: {local}")
+                _model = WhisperModel(
+                    str(local), device="cpu", compute_type="int8"
+                )
+            else:
+                print(f"[ASR] 从 HuggingFace 下载模型: {MODEL_SIZE}")
+                _model = WhisperModel(
+                    MODEL_SIZE, device="cpu", compute_type="int8"
+                )
+        except Exception as e:
+            # 加载失败复位，不缓存坏状态，下次请求重试
+            _model = None
+            raise ModelNotLoadedError(f"模型加载失败：{e}") from e
         return _model
 
 
@@ -78,7 +84,7 @@ def get_model():
 
 def transcribe(audio_path: str, language: Optional[str] = None) -> Tuple[str, float, str]:
     """
-    语音识别。
+    语音识别。同一时间只处理一个请求，防止模型并发崩溃。
 
     Args:
         audio_path: 音频路径
@@ -87,27 +93,28 @@ def transcribe(audio_path: str, language: Optional[str] = None) -> Tuple[str, fl
     Returns:
         (识别文本, 音频时长, 实际检测到的语言)
     """
-    model = get_model()
-    # auto 或 None → 不传 language，让 Whisper 自动检测
-    lang_param = None if language in (None, "auto") else language
+    with _transcribe_lock:
+        model = get_model()
+        # auto 或 None → 不传 language，让 Whisper 自动检测
+        lang_param = None if language in (None, "auto") else language
 
-    # 英文加初始提示词，帮助模型识别常用词
-    initial_prompt = None
-    if lang_param == "en":
-        initial_prompt = "Hello, this is a clear English speech recording."
+        # 英文加初始提示词，帮助模型识别常用词
+        initial_prompt = None
+        if lang_param == "en":
+            initial_prompt = "Hello, this is a clear English speech recording."
 
-    segments, info = model.transcribe(
-        audio_path,
-        language=lang_param,
-        beam_size=5,
-        vad_filter=True,
-        vad_parameters=dict(min_silence_duration_ms=500),
-        initial_prompt=initial_prompt,
-    )
-    text_parts = [seg.text.strip() for seg in segments]
-    text = " ".join(text_parts).strip()
-    detected_lang = info.language if not lang_param else lang_param
-    return text, float(info.duration), detected_lang
+        segments, info = model.transcribe(
+            audio_path,
+            language=lang_param,
+            beam_size=5,
+            vad_filter=True,
+            vad_parameters=dict(min_silence_duration_ms=500),
+            initial_prompt=initial_prompt,
+        )
+        text_parts = [seg.text.strip() for seg in segments]
+        text = " ".join(text_parts).strip()
+        detected_lang = info.language if not lang_param else lang_param
+        return text, float(info.duration), detected_lang
 
 
 def transcribe_with_timing(audio_path: str, language: Optional[str] = None) -> dict:

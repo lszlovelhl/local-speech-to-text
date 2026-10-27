@@ -1,14 +1,14 @@
 /**
  * Local Speech-to-Text v2.1
  * - VAD 自适应切片（浏览器降噪 + 自适应阈值 + 最短/最长保护）
- * - 移动端响应式适配
  * - 会议模式：持续录音，VAD 检测停嘴自动切片
+ * - 单按钮切换：开始/停止 一体化，防止连点
  */
 
 // ---------- DOM ----------
 const $ = (id) => document.getElementById(id);
-const btnStart = $("btnStart");
-const btnStop = $("btnStop");
+const btnRecord = $("btnRecord");
+const btnRecordText = $("btnRecordText");
 const btnUpload = $("btnUpload");
 const btnCopy = $("btnCopy");
 const btnClear = $("btnClear");
@@ -32,6 +32,8 @@ let mediaStream = null;
 let recordStartTs = 0;
 let timerInt = null;
 let chunks = [];
+let isRecording = false;
+let isProcessing = false;
 
 // VAD 相关
 let audioCtx = null;
@@ -43,16 +45,15 @@ let noiseFloorSamples = [];
 let isMeasuringNoise = true;
 let silenceStartTs = 0;
 let speechStartTs = 0;
-let currentChunkChunks = [];   // 当前累积的切片
+let currentChunkChunks = [];
 let chunkStartTime = 0;
-let vadTimer = null;
 
 // VAD 参数
-const VAD_MIN_SPEECH_MS = 300;    // 最短说话时长
-const VAD_MIN_SILENCE_MS = 500;    // 最短静音判定（停嘴0.5秒即切片）
-const VAD_MAX_CHUNK_MS = 8000;     // 最大切片时长
-const VAD_NOISE_MEASURE_MS = 500;  // 噪音采样时长
-const VAD_SENSITIVITY = 2.5;       // 阈值倍率（相对噪音底噪）
+const VAD_MIN_SPEECH_MS = 300;
+const VAD_MIN_SILENCE_MS = 500;
+const VAD_MAX_CHUNK_MS = 8000;
+const VAD_NOISE_MEASURE_MS = 500;
+const VAD_SENSITIVITY = 2.5;
 
 // ---------- Language / Mode ----------
 $("langGroup").addEventListener("click", (e) => {
@@ -80,6 +81,17 @@ function setStatus(state, text) {
     statusBadge.className = `badge ${state}`;
     statusBadge.textContent = text;
     micVisual.className = "mic-visual" + (state === "recording" ? " recording" : state === "processing" ? " processing" : "");
+}
+
+function setRecordButton(state) {
+    btnRecord.className = `record-btn ${state}`;
+    if (state === "idle") {
+        btnRecordText.textContent = "开始录音";
+    } else if (state === "recording") {
+        btnRecordText.textContent = "停止录音";
+    } else if (state === "processing") {
+        btnRecordText.textContent = "识别中…";
+    }
 }
 
 function showToast(msg) {
@@ -113,7 +125,6 @@ function vadLoop() {
     if (!analyser) return;
     analyser.getByteFrequencyData(vadData);
 
-    // 计算当前音量（RMS 近似）
     let sum = 0;
     for (let i = 0; i < vadData.length; i++) {
         sum += vadData[i] * vadData[i];
@@ -126,7 +137,7 @@ function vadLoop() {
         noiseFloorSamples.push(rms);
         if (now - chunkStartTime > VAD_NOISE_MEASURE_MS) {
             noiseFloor = noiseFloorSamples.reduce((a, b) => a + b, 0) / noiseFloorSamples.length;
-            noiseFloor = Math.max(noiseFloor, 5); // 防止底噪为0
+            noiseFloor = Math.max(noiseFloor, 5);
             isMeasuringNoise = false;
             silenceStartTs = now;
         }
@@ -140,23 +151,20 @@ function vadLoop() {
 
     if (isSpeech) {
         if (!speechStartTs) speechStartTs = now;
-        silenceStartTs = now; // 重置静音计时
+        silenceStartTs = now;
     } else {
         if (speechStartTs && now - speechStartTs < VAD_MIN_SPEECH_MS) {
-            // 太短，不算说话
             speechStartTs = 0;
         }
         if (!silenceStartTs) silenceStartTs = now;
     }
 
-    // 判断是否该切片：说话过 + 静音够久
     const longEnoughSilence = now - silenceStartTs > VAD_MIN_SILENCE_MS;
     const hasSpoken = speechStartTs !== 0;
     const chunkDuration = now - chunkStartTime;
     const maxChunkReached = chunkDuration > VAD_MAX_CHUNK_MS;
 
     if ((hasSpoken && longEnoughSilence) || maxChunkReached) {
-        // 触发切片
         if (currentChunkChunks.length > 0) {
             const blob = new Blob(currentChunkChunks, { type: mediaRecorder.mimeType });
             submitAudio(blob, "chunk.webm", true);
@@ -172,9 +180,7 @@ function vadLoop() {
 
 function stopVAD() {
     if (vadRafId) cancelAnimationFrame(vadRafId);
-    if (vadTimer) clearInterval(vadTimer);
     vadRafId = null;
-    vadTimer = null;
     if (audioCtx) {
         audioCtx.close();
         audioCtx = null;
@@ -182,10 +188,18 @@ function stopVAD() {
     analyser = null;
 }
 
-// ---------- Recording ----------
-btnStart.addEventListener("click", async () => {
+// ---------- 录音控制（单按钮） ----------
+btnRecord.addEventListener("click", async () => {
+    if (isProcessing) return;  // 识别中不响应
+    if (isRecording) {
+        stopRecording();
+    } else {
+        await startRecording();
+    }
+});
+
+async function startRecording() {
     try {
-        // 第一层：浏览器硬件级降噪
         mediaStream = await navigator.mediaDevices.getUserMedia({
             audio: {
                 noiseSuppression: true,
@@ -211,27 +225,25 @@ btnStart.addEventListener("click", async () => {
                 const ext = mediaRecorder.mimeType.includes("ogg") ? "ogg" : "webm";
                 submitAudio(blob, `recording.${ext}`);
             } else if (currentChunkChunks.length > 0) {
-                // 会议模式：最后剩余的片子
                 const blob = new Blob(currentChunkChunks, { type: mediaRecorder.mimeType });
                 submitAudio(blob, "final.webm", true);
             }
             cleanupRecording();
         };
 
-        mediaRecorder.start(250); // 每250ms触发一次 ondataavailable，给VAD足够数据
+        mediaRecorder.start(250);
         recordStartTs = Date.now();
-        btnStart.hidden = true;
-        btnStop.hidden = false;
+        isRecording = true;
+        setRecordButton("recording");
         setStatus("recording", "录音中");
         hintText.textContent = currentMode === "conference"
             ? "会议模式：正在监听，自动检测停嘴…"
-            : "正在录音，点击停止结束";
+            : "正在录音，点击按钮停止";
 
         timerInt = setInterval(() => {
             timerText.textContent = fmtTime((Date.now() - recordStartTs) / 1000);
         }, 200);
 
-        // 会议模式启动 VAD
         if (currentMode === "conference") {
             initVAD(mediaStream);
             vadLoop();
@@ -247,22 +259,23 @@ btnStart.addEventListener("click", async () => {
             setStatus("error", "启动失败");
             hintText.textContent = err.message;
         }
+        setRecordButton("idle");
     }
-});
+}
 
-btnStop.addEventListener("click", () => {
+function stopRecording() {
     if (vadRafId) cancelAnimationFrame(vadRafId);
     if (mediaRecorder && mediaRecorder.state !== "inactive") {
         mediaRecorder.stop();
     }
-});
+}
 
 function cleanupRecording() {
     clearInterval(timerInt);
     stopVAD();
     if (mediaStream) mediaStream.getTracks().forEach((t) => t.stop());
-    btnStart.hidden = false;
-    btnStop.hidden = true;
+    isRecording = false;
+    setRecordButton("idle");
 }
 
 // ---------- Upload ----------
@@ -277,7 +290,8 @@ fileInput.addEventListener("change", () => {
 // ---------- API ----------
 async function submitAudio(blob, filename, isChunk = false) {
     if (!isChunk) {
-        btnStart.disabled = true;
+        isProcessing = true;
+        setRecordButton("processing");
         btnUpload.disabled = true;
         if (currentMode === "single") setStatus("processing", "识别中");
     }
@@ -315,7 +329,8 @@ async function submitAudio(blob, filename, isChunk = false) {
         }
     } finally {
         if (!isChunk) {
-            btnStart.disabled = false;
+            isProcessing = false;
+            setRecordButton("idle");
             btnUpload.disabled = false;
         }
     }

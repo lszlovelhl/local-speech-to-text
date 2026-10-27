@@ -19,7 +19,7 @@ from app.audio import validate_upload, save_temp_audio, cleanup_temp, AudioValid
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "static"
 
-app = FastAPI(title="Local Speech-to-Text", version="2.0.0")
+app = FastAPI(title="Local Speech-to-Text", version="2.1.0")
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 ALLOWED_LANGUAGES = {"zh", "en", "auto"}
@@ -33,6 +33,19 @@ async def health():
 @app.get("/")
 async def index():
     return FileResponse(str(STATIC_DIR / "index.html"))
+
+
+def _probe_audio(path: str) -> None:
+    """快速探测音频文件是否可解码，不可解码直接报错。"""
+    try:
+        import av
+        with av.open(path, mode="r") as container:
+            if not container.streams.audio:
+                raise AudioValidationError("文件中未找到音频流，可能不是有效的音频文件")
+    except AudioValidationError:
+        raise
+    except Exception as e:
+        raise AudioValidationError(f"音频文件无法解码，格式可能损坏：{e}") from e
 
 
 @app.post("/api/transcribe")
@@ -56,8 +69,18 @@ async def transcribe(
     temp_path = save_temp_audio(content, ext)
 
     try:
+        # 先探测文件是否可解码，假文件直接报错
+        try:
+            _probe_audio(temp_path)
+        except AudioValidationError as e:
+            raise HTTPException(status_code=400, detail=e.message)
+
         result = asr.transcribe_with_timing(temp_path, language)
         return JSONResponse(content=result)
+    except HTTPException:
+        raise
+    except asr.ModelNotLoadedError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"语音识别失败：{str(e)}")
     finally:

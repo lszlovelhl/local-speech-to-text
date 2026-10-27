@@ -165,26 +165,35 @@ body {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 12px 24px;
+    padding: 14px 32px;
     border: none;
     border-radius: 980px;
     font-size: 16px;
     font-weight: 600;
     font-family: inherit;
     cursor: pointer;
-    transition: all 0.2s;
-    min-height: 44px; /* 移动端最小点击区域 */
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    min-height: 48px;
+    min-width: 160px;
+    justify-content: center;
 }
 .record-btn:active { transform: scale(0.96); }
-.record-btn.start { background: var(--accent); color: #fff; }
-.record-btn.stop { background: var(--red); color: #fff; }
+.record-btn.idle { background: var(--accent); color: #fff; }
+.record-btn.idle:hover { background: var(--accent-hover); }
+.record-btn.recording { background: var(--red); color: #fff; }
+.record-btn.recording:hover { background: #d70015; }
+.record-btn.processing { background: var(--orange); color: #fff; cursor: wait; opacity: 0.8; }
 .record-icon {
     width: 12px; height: 12px;
     border-radius: 50%;
     background: currentColor;
     display: inline-block;
+    transition: all 0.3s;
 }
-.record-icon.square { border-radius: 3px; width: 11px; height: 11px; }
+.record-btn.recording .record-icon {
+    border-radius: 3px;
+    width: 10px; height: 10px;
+}
 
 .status-row {
     display: flex;
