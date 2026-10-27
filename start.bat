@@ -9,11 +9,15 @@ if not exist .venv (
 
 call .venv\Scripts\activate.bat
 
-REM 国内镜像加速模型下载
 set HF_ENDPOINT=https://hf-mirror.com
 
 echo === 安装依赖 ===
 pip install -r requirements.txt --quiet
+
+if not exist models\faster-whisper-base\model.bin (
+    echo === 首次运行，下载 ASR 模型 ===
+    call download_model.bat
+)
 
 echo === 启动服务 ===
 start "" "http://127.0.0.1:8000"

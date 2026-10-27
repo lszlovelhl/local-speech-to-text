@@ -1,16 +1,21 @@
 """
 ASR 模型封装：基于 faster-whisper (CTranslate2)，CPU int8 推理。
 支持中英文自动检测（auto 模式）。
+优先从本地 models/ 目录加载模型，避免网络下载。
 """
 from __future__ import annotations
 
 import os
 import threading
 import time
+from pathlib import Path
 from typing import Optional, Tuple
 
-# 国内网络环境下使用 HuggingFace 镜像，首次下载模型时生效
+# 国内网络环境下的 HuggingFace 镜像（备用）
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+LOCAL_MODEL_DIR = PROJECT_ROOT / "models" / "faster-whisper-base"
 
 MODEL_SIZE = os.environ.get("WHISPER_MODEL", "base")
 
@@ -30,7 +35,19 @@ def _load_model():
         if _model is not None:
             return _model
         from faster_whisper import WhisperModel
-        _model = WhisperModel(MODEL_SIZE, device="cpu", compute_type="int8")
+
+        # 优先从本地目录加载模型（随项目附带，无需下载）
+        if LOCAL_MODEL_DIR.exists() and (LOCAL_MODEL_DIR / "model.bin").exists():
+            print(f"[ASR] 从本地加载模型: {LOCAL_MODEL_DIR}")
+            _model = WhisperModel(
+                str(LOCAL_MODEL_DIR), device="cpu", compute_type="int8"
+            )
+        else:
+            # 本地没有则从 HuggingFace 下载（首次运行）
+            print(f"[ASR] 从 HuggingFace 下载模型: {MODEL_SIZE}")
+            _model = WhisperModel(
+                MODEL_SIZE, device="cpu", compute_type="int8"
+            )
         return _model
 
 
