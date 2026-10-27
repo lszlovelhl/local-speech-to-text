@@ -12,12 +12,14 @@
 ## 快速启动
 
 ```bash
-# 方式一：一键启动（自动开浏览器）
+# 方式一：一键启动（自动建 venv、装依赖、开浏览器）
 ./start.sh          # macOS / Linux
 start.bat           # Windows
 
 # 方式二：手动启动
-python -m pip install -r requirements.txt
+python3 -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
