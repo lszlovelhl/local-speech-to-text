@@ -1,0 +1,5 @@
+中文参考文本 (chinese.wav):
+你好，欢迎使用本地语音识别系统。这是一段中文测试音频。
+
+英文参考文本 (english.wav):
+Hello, welcome to the local speech to text system. This is a test audio in English.
