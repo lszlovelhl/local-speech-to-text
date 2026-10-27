@@ -49,7 +49,7 @@ let vadTimer = null;
 
 // VAD 参数
 const VAD_MIN_SPEECH_MS = 300;    // 最短说话时长
-const VAD_MIN_SILENCE_MS = 1500;   // 最短静音判定
+const VAD_MIN_SILENCE_MS = 500;    // 最短静音判定（停嘴0.5秒即切片）
 const VAD_MAX_CHUNK_MS = 8000;     // 最大切片时长
 const VAD_NOISE_MEASURE_MS = 500;  // 噪音采样时长
 const VAD_SENSITIVITY = 2.5;       // 阈值倍率（相对噪音底噪）
