@@ -27,12 +27,14 @@ _av.open = _patched_av_open
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-# 模型优先级：small > base
-MODEL_DIRS = [
-    PROJECT_ROOT / "models" / "faster-whisper-small",
-    PROJECT_ROOT / "models" / "faster-whisper-base",
-]
+# 所有可选本地模型目录（key 与 WHISPER_MODEL 取值对应）
+_LOCAL_MODEL_DIRS = {
+    "small": PROJECT_ROOT / "models" / "faster-whisper-small",
+    "base": PROJECT_ROOT / "models" / "faster-whisper-base",
+}
 
+# WHISPER_MODEL 环境变量：既决定 HuggingFace 下载哪个模型，也决定本地目录的查找优先级。
+# 默认 small（准确率更高）；设为 base 则优先加载本地 base，找不到再回退 small。
 MODEL_SIZE = os.environ.get("WHISPER_MODEL", "small")
 
 _model = None
@@ -44,8 +46,20 @@ class ModelNotLoadedError(Exception):
     pass
 
 
+def _model_search_order():
+    """按 MODEL_SIZE 构造本地模型查找顺序：首选对应目录，其余目录依次回退。"""
+    order = []
+    primary = _LOCAL_MODEL_DIRS.get(MODEL_SIZE)
+    if primary is not None:
+        order.append(primary)
+    for d in _LOCAL_MODEL_DIRS.values():
+        if d not in order:
+            order.append(d)
+    return order
+
+
 def _find_local_model() -> Optional[Path]:
-    for d in MODEL_DIRS:
+    for d in _model_search_order():
         if (d / "model.bin").exists():
             return d
     return None

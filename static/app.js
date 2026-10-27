@@ -9,6 +9,48 @@
 
 // ---------- DOM ----------
 const $ = (id) => document.getElementById(id);
+
+// ---------- roundRect 兼容兜底（Safari < 16.0 等旧浏览器）----------
+// 仅在原生 roundRect 不存在时补一个视觉等价实现；现代浏览器绝不覆盖原生方法。
+if (typeof CanvasRenderingContext2D !== "undefined" &&
+    typeof CanvasRenderingContext2D.prototype.roundRect !== "function") {
+    CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
+        // 规范化圆角半径，与原生行为一致：单值或数组均可，且不超过 w/2、h/2
+        let radii;
+        if (r === undefined || r === null) {
+            radii = [0, 0, 0, 0];
+        } else if (typeof r === "number") {
+            radii = [r, r, r, r];
+        } else if (Array.isArray(r)) {
+            // 原生支持 1~4 元素数组，按顺时针四角展开
+            const len = r.length;
+            if (len === 1) radii = [r[0], r[0], r[0], r[0]];
+            else if (len === 2) radii = [r[0], r[1], r[0], r[1]];
+            else if (len === 3) radii = [r[0], r[1], r[2], r[1]];
+            else radii = [r[0], r[1], r[2], r[3]];
+        } else {
+            radii = [r, r, r, r];
+        }
+        let [tl, tr, br, bl] = radii;
+        tl = Math.min(tl, w / 2, h / 2);
+        tr = Math.min(tr, w / 2, h / 2);
+        br = Math.min(br, w / 2, h / 2);
+        bl = Math.min(bl, w / 2, h / 2);
+
+        this.moveTo(x + tl, y);
+        this.lineTo(x + w - tr, y);
+        this.arcTo(x + w, y, x + w, y + tr, tr);
+        this.lineTo(x + w, y + h - br);
+        this.arcTo(x + w, y + h, x + w - br, y + h, br);
+        this.lineTo(x + bl, y + h);
+        this.arcTo(x, y + h, x, y + h - bl, bl);
+        this.lineTo(x, y + tl);
+        this.arcTo(x, y, x + tl, y, tl);
+        this.closePath();
+        return this;
+    };
+}
+
 const btnRecord = $("btnRecord");
 const btnRecordText = $("btnRecordText");
 const btnUpload = $("btnUpload");
@@ -26,9 +68,7 @@ const metaLang = $("metaLang");
 const metaDuration = $("metaDuration");
 const metaProcessing = $("metaProcessing");
 const fileName = $("fileName");
-const micVisual = $("micVisual");
 const toast = $("toast");
-const historyList = $("historyList");
 const waveCanvas = $("waveCanvas");
 const waveCtx = waveCanvas.getContext("2d");
 const recorderLabel = $("recorderLabel");

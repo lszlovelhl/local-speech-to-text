@@ -16,6 +16,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from app import asr
 from app.audio import validate_upload, save_temp_audio, cleanup_temp, AudioValidationError
+from app.config import VIDEO_EXTENSIONS, MAX_AUDIO_SIZE, MAX_VIDEO_SIZE
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "static"
@@ -24,13 +25,6 @@ app = FastAPI(title="Local Speech-to-Text", version="3.0.0")
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 ALLOWED_LANGUAGES = {"zh", "en", "auto"}
-
-# 支持的视频格式（PyAV 自动提取音轨）
-VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v"}
-
-# 大小限制
-MAX_AUDIO_SIZE = 100 * 1024 * 1024  # 100MB
-MAX_VIDEO_SIZE = 200 * 1024 * 1024  # 200MB
 
 
 @app.get("/health")

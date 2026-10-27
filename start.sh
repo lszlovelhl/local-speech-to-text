@@ -58,6 +58,25 @@ fi
 
 echo "=== 启动服务 ==="
 echo ">>> 浏览器访问: http://127.0.0.1:8000"
+
+# M1: 端口预检。若 8000 已被占用，直接提示并打开浏览器退出，避免 uvicorn EADDRINUSE 崩溃。
+#     lsof -iTCP:8000 -sTCP:LISTEN -t 在 macOS 与 Linux 上均可用。
+if lsof -iTCP:8000 -sTCP:LISTEN -t >/dev/null 2>&1; then
+    echo "服务已在运行 http://127.0.0.1:8000"
+    (command -v open >/dev/null 2>&1 && open "http://127.0.0.1:8000" || command -v xdg-open &>/dev/null && xdg-open "http://127.0.0.1:8000") || true
+    exit 0
+fi
+
+# L6: 后台延迟打开浏览器的子 shell 需要被追踪，退出时清理，避免 Ctrl+C 后残留 sleep/open 进程。
+BROWSER_PID=""
+cleanup_browser() {
+    if [ -n "$BROWSER_PID" ]; then
+        kill "$BROWSER_PID" >/dev/null 2>&1 || true
+    fi
+}
+trap cleanup_browser EXIT INT TERM
+
 (sleep 2 && (command -v open >/dev/null 2>&1 && open "http://127.0.0.1:8000" || command -v xdg-open &>/dev/null && xdg-open "http://127.0.0.1:8000")) &
+BROWSER_PID=$!
 
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000

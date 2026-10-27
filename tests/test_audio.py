@@ -15,7 +15,7 @@ def test_validate_empty_file():
 
 
 def test_validate_too_large():
-    """超过 10MB 应报错。"""
+    """超过 100MB 应报错。"""
     big_content = b"\x00" * (MAX_FILE_SIZE + 1)
     with pytest.raises(AudioValidationError, match="超过"):
         validate_upload("big.wav", big_content)

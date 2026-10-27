@@ -7,10 +7,11 @@ import os
 import tempfile
 from typing import Tuple
 
-# 允许的文件扩展名
-ALLOWED_EXTENSIONS = {".wav", ".webm", ".ogg", ".mp3", ".m4a", ".flac"}
-# 上传大小上限 100MB
-MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
+from app.config import ALLOWED_EXTENSIONS, MAX_AUDIO_SIZE
+
+# 兼容旧导入名：历史上 tests/test_audio.py 直接 `from app.audio import MAX_FILE_SIZE`，
+# 这里保留该名字，指向集中配置里的音频上限。
+MAX_FILE_SIZE = MAX_AUDIO_SIZE
 
 
 class AudioValidationError(Exception):
