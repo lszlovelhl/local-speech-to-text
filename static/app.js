@@ -63,29 +63,35 @@ const VAD_MAX_CHUNK_MS = 8000;
 const VAD_NOISE_MEASURE_MS = 500;
 const VAD_SENSITIVITY = 2.5;
 
-// ---------- Segmented Control with sliding thumb ----------
-function moveThumb(container, btn) {
-    const thumb = container.querySelector(".seg-thumb");
-    const btns = container.querySelectorAll(".seg");
-    const idx = Array.from(btns).indexOf(btn);
-    if (idx < 0 || !thumb) return;
-    // thumb width = button width, positioned at button's left offset
+// ---------- Segmented Control with draggable thumb ----------
+function getThumbPos(container, btn) {
     const btnRect = btn.getBoundingClientRect();
     const containerRect = container.getBoundingClientRect();
-    const left = btnRect.left - containerRect.left - 2; // padding offset
-    thumb.style.width = btnRect.width + "px";
-    thumb.style.transform = `translateX(${left}px)`;
+    return {
+        x: btnRect.left - containerRect.left - 2,
+        w: btnRect.width,
+    };
+}
+
+function moveThumb(container, btn) {
+    const thumb = container.querySelector(".seg-thumb");
+    if (!thumb) return;
+    const pos = getThumbPos(container, btn);
+    thumb.style.width = pos.w + "px";
+    thumb.style.transform = `translateX(${pos.x}px)`;
 }
 
 function setupSegmented(containerId, onChange) {
     const container = $(containerId);
-    const btns = container.querySelectorAll(".seg");
-    // Position thumb on first active
+    const thumb = container.querySelector(".seg-thumb");
+    const btns = Array.from(container.querySelectorAll(".seg"));
     const active = container.querySelector(".seg.active");
     if (active) moveThumb(container, active);
 
+    // Click to jump
     btns.forEach((btn) => {
         btn.addEventListener("click", () => {
+            if (btn.classList.contains("active")) return;
             btns.forEach((b) => b.classList.remove("active"));
             btn.classList.add("active");
             moveThumb(container, btn);
@@ -93,26 +99,55 @@ function setupSegmented(containerId, onChange) {
         });
     });
 
-    // Draggable thumb
+    // Draggable thumb — grab anywhere on container
     let dragging = false;
+    let startX = 0;
+    let thumbStartX = 0;
+
     container.addEventListener("pointerdown", (e) => {
         const btn = e.target.closest(".seg");
         if (!btn) return;
         dragging = true;
-        btn.setPointerCapture(e.pointerId);
+        startX = e.clientX;
+        const pos = getThumbPos(container, container.querySelector(".seg.active"));
+        thumbStartX = pos.x;
+        thumb.style.transition = "none"; // disable animation during drag
+        thumb.classList.add("dragging");
+        container.setPointerCapture(e.pointerId);
     });
+
     container.addEventListener("pointermove", (e) => {
         if (!dragging) return;
-        const btn = e.target.closest(".seg");
-        if (btn && !btn.classList.contains("active")) {
-            btns.forEach((b) => b.classList.remove("active"));
-            btn.classList.add("active");
-            moveThumb(container, btn);
-            onChange(btn);
+        const dx = e.clientX - startX;
+        const containerRect = container.getBoundingClientRect();
+        const maxX = containerRect.width - thumb.offsetWidth - 2;
+        let newX = Math.max(2, Math.min(maxX, thumbStartX + dx));
+        thumb.style.transform = `translateX(${newX}px)`;
+
+        // Find which button the thumb is over
+        const thumbCenter = newX + thumb.offsetWidth / 2;
+        for (const btn of btns) {
+            const btnRect = btn.getBoundingClientRect();
+            const btnCenter = btnRect.left - containerRect.left + btnRect.width / 2;
+            if (Math.abs(thumbCenter - btnCenter) < btnRect.width / 2) {
+                if (!btn.classList.contains("active")) {
+                    btns.forEach((b) => b.classList.remove("active"));
+                    btn.classList.add("active");
+                    onChange(btn);
+                }
+                break;
+            }
         }
     });
+
     container.addEventListener("pointerup", (e) => {
+        if (!dragging) return;
         dragging = false;
+        thumb.classList.remove("dragging");
+        // Snap to nearest button with animation
+        thumb.style.transition = "";
+        const active = container.querySelector(".seg.active");
+        if (active) moveThumb(container, active);
     });
 }
 

@@ -137,9 +137,13 @@ body {
     border-radius: 8px;
     background: rgba(255,255,255,0.9);
     box-shadow: 0 2px 8px rgba(0,0,0,0.12), 0 0 0 0.5px rgba(255,255,255,0.5);
-    transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), width 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), width 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s;
     pointer-events: none;
     z-index: 0;
+}
+.seg-thumb.dragging {
+    box-shadow: 0 4px 16px rgba(0,0,0,0.18), 0 0 0 1px rgba(255,255,255,0.6), 0 0 20px rgba(255,255,255,0.3);
+    border-radius: 10px;
 }
 @media (prefers-color-scheme: dark) {
     .seg-thumb {
