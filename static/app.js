@@ -130,22 +130,28 @@ function renderHistory() {
         </div>`;
     }).join("");
 
-    // Click tape to load content
+    // Click tape to open modal
     document.querySelectorAll(".tape").forEach((t) => {
         t.addEventListener("click", () => {
             const idx = parseInt(t.dataset.idx);
             const h = history[idx];
             if (!h) return;
-            document.querySelectorAll(".tape").forEach((x) => x.classList.remove("active-tape"));
-            t.classList.add("active-tape");
-            resultText.textContent = h.text;
-            resultText.classList.remove("placeholder");
-            lastResultText = h.text;
-            btnCopy.disabled = false;
-            btnExport.disabled = false;
+            openTapeModal(h);
         });
     });
 }
+
+function openTapeModal(h) {
+    const modal = $("tapeModal");
+    const d = new Date(h.ts);
+    $("modalTitle").textContent = `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,"0")}`;
+    $("modalTime").textContent = fmtTime(h.duration || 0);
+    $("modalText").textContent = h.text;
+    modal.classList.add("open");
+}
+
+$("modalClose").addEventListener("click", () => $("tapeModal").classList.remove("open"));
+$("tapeModal").querySelector(".tape-modal-backdrop").addEventListener("click", () => $("tapeModal").classList.remove("open"));
 
 function escapeHtml(s) {
     return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");

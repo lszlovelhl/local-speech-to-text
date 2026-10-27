@@ -191,6 +191,30 @@
     </main>
 
     <div id="toast" class="toast"></div>
+
+    <!-- Tape Modal -->
+    <div id="tapeModal" class="tape-modal">
+        <div class="tape-modal-backdrop"></div>
+        <div class="tape-modal-body">
+            <div class="tape-modal-cassette">
+                <div class="tape-modal-top">
+                    <span id="modalTapeLabel">STT-001</span>
+                    <button id="modalClose" class="modal-close">✕</button>
+                </div>
+                <div class="tape-modal-window">
+                    <div class="reel" id="modalReelL"><div class="reel-hub"></div></div>
+                    <div class="tape-modal-strip">
+                        <span id="modalTitle">未命名</span>
+                        <span id="modalTime">00:00</span>
+                    </div>
+                    <div class="reel" id="modalReelR"><div class="reel-hub"></div></div>
+                </div>
+                <div class="tape-modal-text" id="modalText"></div>
+                <audio id="modalAudio" controls style="width:100%;margin-top:10px;display:none"></audio>
+            </div>
+        </div>
+    </div>
+
     <script src="/static/app.js"></script>
 </body>
 </html>
