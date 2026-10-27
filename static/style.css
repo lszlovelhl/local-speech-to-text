@@ -63,16 +63,16 @@ body {
     overflow: hidden;
     pointer-events: none;
     z-index: 0;
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-around;
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    grid-template-rows: repeat(6, 1fr);
     align-items: center;
-    padding: 5%;
+    justify-items: center;
     opacity: 0.18;
     transition: opacity 0.6s ease, transform 0.6s ease;
 }
 .emoji-bg span {
-    font-size: 64px;
+    font-size: 56px;
     animation: float 6s ease-in-out infinite;
 }
 .emoji-bg span:nth-child(odd) { animation-delay: 1s; }
