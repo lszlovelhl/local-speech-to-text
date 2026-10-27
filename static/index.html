@@ -64,18 +64,18 @@
                     </div>
                 </div>
 
-                <!-- Mode stickers on body -->
+                <!-- Mode stickers on cassette frame -->
                 <div class="walkman-stickers" id="stickersSingle">
-                    <span class="sticker" style="top:-6px;left:20px">💡</span>
-                    <span class="sticker" style="top:-8px;right:30px">✏️</span>
-                    <span class="sticker" style="bottom:-4px;left:25px">📝</span>
-                    <span class="sticker" style="bottom:-6px;right:20px">🎯</span>
+                    <span class="sticker sticker-1">💡</span>
+                    <span class="sticker sticker-2">✏️</span>
+                    <span class="sticker sticker-3">📝</span>
+                    <span class="sticker sticker-4">🎯</span>
                 </div>
                 <div class="walkman-stickers stickers-conf" id="stickersConf">
-                    <span class="sticker" style="top:-6px;left:20px">👥</span>
-                    <span class="sticker" style="top:-8px;right:30px">🏛️</span>
-                    <span class="sticker" style="bottom:-4px;left:25px">💼</span>
-                    <span class="sticker" style="bottom:-6px;right:20px">🗣️</span>
+                    <span class="sticker sticker-1">👥</span>
+                    <span class="sticker sticker-2">🏛️</span>
+                    <span class="sticker sticker-3">💼</span>
+                    <span class="sticker sticker-4">🗣️</span>
                 </div>
 
                 <!-- Mode label -->
@@ -173,12 +173,19 @@
         </section>
 
         <section class="card">
-            <div class="result-meta" style="margin-bottom:8px">
-                <span style="font-weight:600;font-size:15px">历史记录</span>
-                <span style="color:var(--text-secondary);font-size:12px">仅保留当天 · 超过24h自动清除</span>
+            <div class="result-meta" style="margin-bottom:12px">
+                <span style="font-weight:600;font-size:15px">磁带收藏</span>
+                <span style="color:var(--text-secondary);font-size:12px">24h自动清除 · 悬停挑选磁带</span>
             </div>
-            <div id="historyList" class="history-list">
-                <div class="history-empty">暂无记录</div>
+            <div class="tape-rack">
+                <div class="tape-column">
+                    <div class="tape-column-title">💡 单次灵感</div>
+                    <div class="tape-shelf" id="tapeSingle"></div>
+                </div>
+                <div class="tape-column">
+                    <div class="tape-column-title">🧠 会议记录</div>
+                    <div class="tape-shelf" id="tapeConf"></div>
+                </div>
             </div>
         </section>
     </main>

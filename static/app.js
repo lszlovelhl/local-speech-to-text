@@ -105,27 +105,46 @@ function addHistory(mode, text, duration, segments) {
 }
 
 function renderHistory() {
-    if (!historyList) return;
-    if (history.length === 0) {
-        historyList.innerHTML = '<div class="history-empty">暂无记录</div>';
-        return;
-    }
-    historyList.innerHTML = history.map((h) => {
-        const time = new Date(h.ts).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-        const modeTag = h.mode === "conference"
-            ? '<span class="tag tag-conf">会议</span>'
-            : '<span class="tag tag-single">单次</span>';
-        const segHtml = (h.segments && h.segments.length > 1)
-            ? `<div class="history-segs">${h.segments.map((s) =>
-                `<div class="history-seg"><span class="segment-time">[${fmtTimestamp(s.start)} - ${fmtTimestamp(s.end)}]</span><span>${escapeHtml(s.text)}</span></div>`
-            ).join("")}</div>`
-            : "";
-        return `<div class="history-item">
-            <div class="history-head">${modeTag}<span class="history-time">${time}</span><span class="history-dur">${fmtTime(h.duration || 0)}</span></div>
-            <div class="history-text">${escapeHtml(h.text)}</div>
-            ${segHtml}
+    const singleShelf = $("tapeSingle");
+    const confShelf = $("tapeConf");
+    if (!singleShelf || !confShelf) return;
+
+    const singles = history.filter((h) => h.mode !== "conference");
+    const confs = history.filter((h) => h.mode === "conference");
+
+    singleShelf.innerHTML = singles.map((h, i) => {
+        const d = new Date(h.ts);
+        const label = `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,"0")}`;
+        return `<div class="tape" data-idx="${history.indexOf(h)}" title="${escapeHtml(h.text)}">
+            <div class="tape-label">${escapeHtml(label)}</div>
+            <div class="tape-duration">${fmtTime(h.duration||0)}</div>
         </div>`;
     }).join("");
+
+    confShelf.innerHTML = confs.map((h) => {
+        const d = new Date(h.ts);
+        const label = `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,"0")}`;
+        return `<div class="tape" data-idx="${history.indexOf(h)}" title="${escapeHtml(h.text)}">
+            <div class="tape-label">${escapeHtml(label)}</div>
+            <div class="tape-duration">${fmtTime(h.duration||0)}</div>
+        </div>`;
+    }).join("");
+
+    // Click tape to load content
+    document.querySelectorAll(".tape").forEach((t) => {
+        t.addEventListener("click", () => {
+            const idx = parseInt(t.dataset.idx);
+            const h = history[idx];
+            if (!h) return;
+            document.querySelectorAll(".tape").forEach((x) => x.classList.remove("active-tape"));
+            t.classList.add("active-tape");
+            resultText.textContent = h.text;
+            resultText.classList.remove("placeholder");
+            lastResultText = h.text;
+            btnCopy.disabled = false;
+            btnExport.disabled = false;
+        });
+    });
 }
 
 function escapeHtml(s) {
