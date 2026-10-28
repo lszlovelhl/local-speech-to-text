@@ -244,12 +244,19 @@ body.mode-conference .emoji-bg-conf {
     padding: 12px;
 }
 .walkman {
-    background: linear-gradient(145deg, #3a3a3e, #252528);
+    background: linear-gradient(145deg, #d8d8dc, #b8b8bc);
     border-radius: 16px;
     padding: 16px;
     position: relative;
     overflow: hidden;
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -2px 4px rgba(0,0,0,0.3), 0 4px 16px rgba(0,0,0,0.2);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), inset 0 -2px 4px rgba(0,0,0,0.1), 0 4px 16px rgba(0,0,0,0.1);
+    transition: background 0.3s, box-shadow 0.3s;
+}
+@media (prefers-color-scheme: dark) {
+    .walkman {
+        background: linear-gradient(145deg, #3a3a3e, #252528);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -2px 4px rgba(0,0,0,0.3), 0 4px 16px rgba(0,0,0,0.2);
+    }
 }
 .walkman-top {
     display: flex;
@@ -309,6 +316,36 @@ body.mode-conference .emoji-bg-conf {
 .sticker-4 { bottom: -6px; right: 16px; transform: rotate(-6deg); }
 .stickers-conf {
     display: none;
+}
+
+/* Dark mode walkman inner elements */
+@media (prefers-color-scheme: dark) {
+    .cassette-window {
+        background: linear-gradient(180deg, #1a1a1c, #2c2c2e);
+        border-color: rgba(255,255,255,0.06);
+        box-shadow: inset 0 2px 8px rgba(0,0,0,0.5);
+    }
+    .reel {
+        background: #3a3a3c;
+        box-shadow: inset 0 0 0 2px #48484a;
+    }
+    .vu-meter, .speaker, .wave-canvas {
+        background: #1c1c1e;
+    }
+}
+@media (prefers-color-scheme: light) {
+    .cassette-window {
+        background: linear-gradient(180deg, #e8e8ec, #c8c8cc);
+        border-color: rgba(0,0,0,0.08);
+        box-shadow: inset 0 2px 6px rgba(0,0,0,0.15);
+    }
+    .reel {
+        background: #b8b8bc;
+        box-shadow: inset 0 0 0 2px #98989d;
+    }
+    .vu-meter, .speaker, .wave-canvas {
+        background: #e8e8ec;
+    }
 }
 body.mode-conference .stickers-conf {
     display: block;
@@ -800,13 +837,19 @@ body.mode-conference .stickers-conf .sticker {
     width: 36px;
     min-width: 36px;
     height: 100px;
-    background: linear-gradient(180deg, #2c2c2e, #1c1c1e);
+    background: linear-gradient(180deg, #c8c8cc, #a8a8ac);
     border-radius: 4px 4px 2px 2px;
     position: relative;
     cursor: pointer;
     transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
     flex-shrink: 0;
+}
+@media (prefers-color-scheme: dark) {
+    .tape {
+        background: linear-gradient(180deg, #2c2c2e, #1c1c1e);
+        box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    }
 }
 .tape:hover {
     transform: translateY(-12px) scale(1.15);
@@ -878,10 +921,16 @@ body.mode-conference .stickers-conf .sticker {
     animation: fadeUp 0.3s ease-out;
 }
 .tape-modal-cassette {
-    background: linear-gradient(145deg, #3a3a3e, #252528);
+    background: linear-gradient(145deg, #e8e8ec, #c8c8cc);
     border-radius: 16px;
     padding: 16px;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+    box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+}
+@media (prefers-color-scheme: dark) {
+    .tape-modal-cassette {
+        background: linear-gradient(145deg, #3a3a3e, #252528);
+        box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+    }
 }
 .tape-modal-top {
     display: flex;
