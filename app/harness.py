@@ -176,20 +176,27 @@ def _cleanup(text: str) -> str:
     return text.strip()
 
 
-def post_process(text: str, language: str = "auto") -> str:
-    """ASR 后处理入口。"""
+def post_process(text: str, language: str = "auto") -> tuple[str, str]:
+    """ASR 后处理入口。返回 (修正后文本, 修正后语言)。"""
     if not text:
-        return text
+        return text, language
 
     text = _cleanup(text)
 
-    # 繁体转简体（whisper 偶尔输出繁体）
+    # 繁体转简体
     cc = _get_opencc()
     if cc and cc is not False:
         try:
             text = cc.convert(text)
         except Exception:
             pass
+
+    # 文本反推：如果检测到英文但输出大量中文字符，说明检测错了
+    if language == "en" or language == "auto":
+        zh_chars = len(re.findall(r'[\u4e00-\u9fff]', text))
+        en_words = len(re.findall(r'[a-zA-Z]+', text))
+        if zh_chars > en_words * 2:
+            language = "zh"
 
     if language == "zh":
         text = _fix_zh(text)
@@ -199,4 +206,4 @@ def post_process(text: str, language: str = "auto") -> str:
         text = _fix_zh(text)
         text = _fix_en(text)
 
-    return text
+    return text, language

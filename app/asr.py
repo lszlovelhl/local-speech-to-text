@@ -143,15 +143,15 @@ def transcribe_with_timing(audio_path: str, language: Optional[str] = None) -> d
         text = " ".join(text_parts).strip()
         # Harness 后处理
         detected_lang = lang_param or info.language
-        text = post_process(text, detected_lang)
+        text, final_lang = post_process(text, detected_lang)
         # segments 也过一遍
         for seg in segments:
-            seg["text"] = post_process(seg["text"], detected_lang)
+            seg["text"], _ = post_process(seg["text"], detected_lang)
         elapsed = time.perf_counter() - t0
 
         return {
             "text": text,
-            "language": info.language if not lang_param else lang_param,
+            "language": final_lang,
             "duration_seconds": round(float(info.duration), 2),
             "processing_seconds": round(elapsed, 2),
             "segments": segments,
