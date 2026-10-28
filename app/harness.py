@@ -84,6 +84,20 @@ def _protect_terms(text: str) -> tuple[str, dict]:
     return text, placeholders
 
 
+def _protect_english(text: str) -> tuple[str, dict]:
+    """把英文单词替换成占位符，防止被中文纠错库误改。"""
+    placeholders = {}
+    i = 0
+    def _replace(m):
+        nonlocal i
+        key = f"__EN_{i}__"
+        placeholders[key] = m.group(0)
+        i += 1
+        return key
+    text = re.sub(r'[a-zA-Z][a-zA-Z0-9\']*', _replace, text)
+    return text, placeholders
+
+
 def _restore_terms(text: str, placeholders: dict) -> str:
     """恢复领域术语。"""
     for key, term in placeholders.items():
@@ -92,7 +106,7 @@ def _restore_terms(text: str, placeholders: dict) -> str:
 
 
 def _fix_zh(text: str) -> str:
-    """中文文本修正：规则 + pycorrector。"""
+    """中文文本修正：规则 + pycorrector（英文单词受保护）。"""
     # 纯英文文本跳过中文纠错
     if not re.search(r'[\u4e00-\u9fff]', text):
         return text
@@ -101,14 +115,16 @@ def _fix_zh(text: str) -> str:
     for wrong, right in ZH_CORRECTIONS.items():
         text = text.replace(wrong, right)
 
-    # pycorrector 纠错
+    # pycorrector 纠错（先保护英文单词和领域术语）
     corrector = _get_pycorrector()
     if corrector and corrector is not False:
         try:
-            text, placeholders = _protect_terms(text)
+            text, en_placeholders = _protect_english(text)
+            text, term_placeholders = _protect_terms(text)
             corrected = corrector.correct(text)
             text = corrected["corrected_text"]
-            text = _restore_terms(text, placeholders)
+            text = _restore_terms(text, term_placeholders)
+            text = _restore_terms(text, en_placeholders)
         except Exception:
             pass
 
