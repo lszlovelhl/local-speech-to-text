@@ -30,6 +30,18 @@ EN_CORRECTIONS = {
 # 初始化纠错库（懒加载）
 _pycorrector = None
 _symspell = None
+_opencc = None
+
+
+def _get_opencc():
+    global _opencc
+    if _opencc is None:
+        try:
+            from opencc import OpenCC
+            _opencc = OpenCC('t2s')  # 繁体 → 简体
+        except Exception:
+            _opencc = False
+    return _opencc
 
 
 def _get_pycorrector():
@@ -150,6 +162,14 @@ def post_process(text: str, language: str = "auto") -> str:
         return text
 
     text = _cleanup(text)
+
+    # 繁体转简体（whisper 偶尔输出繁体）
+    cc = _get_opencc()
+    if cc and cc is not False:
+        try:
+            text = cc.convert(text)
+        except Exception:
+            pass
 
     if language == "zh":
         text = _fix_zh(text)

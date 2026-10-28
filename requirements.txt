@@ -5,3 +5,4 @@ av>=12.0.0
 faster-whisper>=1.0.0
 pycorrector>=1.1.0
 symspellpy>=6.10.0
+opencc-python-reimplemented>=0.1.7
