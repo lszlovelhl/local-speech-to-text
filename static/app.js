@@ -104,6 +104,8 @@ let silenceStartTs = 0;
 let speechStartTs = 0;
 let currentChunkChunks = [];
 let chunkStartTime = 0;
+let chunkQueue = [];
+let chunkProcessing = false;
 
 // History
 let history = [];
@@ -535,7 +537,8 @@ function vadLoop() {
     if ((hasSpoken && longEnoughSilence) || maxChunkReached) {
         if (currentChunkChunks.length > 0) {
             const blob = new Blob(currentChunkChunks, { type: mediaRecorder.mimeType });
-            submitAudio(blob, "chunk.webm", true);
+            chunkQueue.push(blob);
+            processChunkQueue();
         }
         currentChunkChunks = [];
         chunkStartTime = now;
@@ -543,6 +546,20 @@ function vadLoop() {
         silenceStartTs = now;
     }
     vadRafId = requestAnimationFrame(vadLoop);
+}
+
+async function processChunkQueue() {
+    if (chunkProcessing) return;
+    chunkProcessing = true;
+    while (chunkQueue.length > 0) {
+        const blob = chunkQueue.shift();
+        try {
+            await submitAudio(blob, "chunk.webm", true);
+        } catch (e) {
+            console.warn("chunk failed:", e);
+        }
+    }
+    chunkProcessing = false;
 }
 
 function stopVAD() {
@@ -640,6 +657,8 @@ function cleanupRecording() {
     isRecording = false;
     setRecordButton("idle");
     timerText.textContent = "00:00";
+    chunkQueue = [];
+    chunkProcessing = false;
     if (currentMode === "conference") {
         setStatus("idle", "待机");
         hintText.textContent = "可以再次录音，或按空格键继续";
