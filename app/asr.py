@@ -108,9 +108,12 @@ def transcribe_with_timing(audio_path: str, language: Optional[str] = None) -> d
 
         initial_prompt = None
         if lang_param == "en":
-            initial_prompt = "Hello, this is a clear English speech recording."
+            initial_prompt = ("Hello, this is a clear English speech recording. "
+                               "Please transcribe everything in English only.")
         elif lang_param == "zh":
-            initial_prompt = "你好，这是一段清晰的中文语音录音。"
+            initial_prompt = ("你好，这是一段清晰的中文语音录音。"
+                               "这是一个语音识别工具，用于将语音转成文字。"
+                               "常用词：单次识别、会议模式、识别语言、录音、上传文件。")
 
         segments_iter, info = model.transcribe(
             audio_path,

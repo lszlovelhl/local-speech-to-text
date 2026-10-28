@@ -817,13 +817,15 @@ body.mode-conference .stickers-conf .sticker {
 }
 .tape-shelf {
     display: flex;
-    gap: 6px;
+    gap: 8px 6px;
     align-items: flex-end;
+    justify-content: center;
     min-height: 130px;
     padding: 20px 6px 10px;
     background: var(--result-bg);
     border-radius: 10px;
     overflow: visible;
+    flex-wrap: wrap;
 }
 .tape-shelf:empty::after {
     content: "空";
