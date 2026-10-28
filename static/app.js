@@ -360,6 +360,18 @@ function setupSegmented(containerId, onChange) {
             if (activeBtn) moveThumb(container, activeBtn);
         }
     });
+
+    // Click-to-select support
+    btns.forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+            if (!btn.classList.contains("active")) {
+                btns.forEach((b) => b.classList.remove("active"));
+                btn.classList.add("active");
+                moveThumb(container, btn);
+                onChange(btn);
+            }
+        });
+    });
 }
 
 setupSegmented("langGroup", (btn) => {
@@ -559,14 +571,26 @@ async function startRecording() {
         mediaRecorder.ondataavailable = (e) => {
             if (e.data.size > 0) { chunks.push(e.data); currentChunkChunks.push(e.data); }
         };
-        mediaRecorder.onstop = () => {
+        mediaRecorder.onstop = async () => {
             const duration = (Date.now() - recordStartTs) / 1000;
             if (currentMode === "single") {
                 const blob = new Blob(chunks, { type: mediaRecorder.mimeType });
                 submitAudio(blob, `recording.${mediaRecorder.mimeType.includes("ogg") ? "ogg" : "webm"}`, false, duration, blob);
             } else {
+                // Submit final chunk and wait for result
                 if (currentChunkChunks.length > 0) {
-                    submitAudio(new Blob(currentChunkChunks, { type: mediaRecorder.mimeType }), "final.webm", true);
+                    try {
+                        const fd = new FormData();
+                        fd.append("file", new Blob(currentChunkChunks, { type: mediaRecorder.mimeType }), "final.webm");
+                        fd.append("language", currentLang);
+                        const resp = await fetch("/api/transcribe", { method: "POST", body: fd });
+                        const data = await resp.json();
+                        if (data.text) {
+                            resultText.classList.remove("placeholder");
+                            resultText.textContent += " " + data.text + " ";
+                            lastResultText = resultText.textContent;
+                        }
+                    } catch (e) { console.warn("final chunk failed:", e); }
                 }
                 if (lastResultText && !resultText.classList.contains("placeholder")) {
                     addHistory("conference", lastResultText, duration, []);
@@ -703,7 +727,9 @@ async function submitAudio(blob, filename, isChunk = false, duration = 0, audioB
             addHistory(currentMode, data.text || "", data.duration_seconds || duration, data.segments || [], audioBlob);
         }
     } catch (err) {
-        if (!isChunk) {
+        if (isChunk) {
+            console.warn("chunk transcribe failed:", err.message);
+        } else {
             setStatus("error", "识别失败");
             hintText.textContent = err.message;
             showToast("识别失败");
