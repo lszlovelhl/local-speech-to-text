@@ -93,6 +93,10 @@ def _restore_terms(text: str, placeholders: dict) -> str:
 
 def _fix_zh(text: str) -> str:
     """中文文本修正：规则 + pycorrector。"""
+    # 纯英文文本跳过中文纠错
+    if not re.search(r'[\u4e00-\u9fff]', text):
+        return text
+
     # 规则兜底
     for wrong, right in ZH_CORRECTIONS.items():
         text = text.replace(wrong, right)
