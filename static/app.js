@@ -616,7 +616,8 @@ async function startRecording() {
         btnExport.disabled = true;
 
         timerInt = setInterval(() => { timerText.textContent = fmtTime((Date.now() - recordStartTs) / 1000); }, 200);
-        if (currentMode === "conference") { initVAD(mediaStream); vadLoop(); }
+        initVAD(mediaStream);
+        if (currentMode === "conference") vadLoop();
     } catch (err) {
         const msgs = { NotAllowedError: "请在浏览器设置中允许麦克风权限", NotFoundError: "未检测到麦克风设备" };
         setStatus("error", err.name === "NotAllowedError" ? "权限被拒绝" : "启动失败");
