@@ -797,7 +797,8 @@ body.mode-conference .stickers-conf .sticker {
     color: var(--text-secondary);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
-    min-width: 90px;
+    min-width: 110px;
+    flex-shrink: 0;
     font-family: "SF Mono", monospace;
 }
 .segment-text { color: var(--text); }
