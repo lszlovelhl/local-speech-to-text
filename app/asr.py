@@ -13,6 +13,8 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from app.harness import post_process
+
 # 国内网络环境下的 HuggingFace 镜像（备用）
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
@@ -139,6 +141,12 @@ def transcribe_with_timing(audio_path: str, language: Optional[str] = None) -> d
                 text_parts.append(text)
 
         text = " ".join(text_parts).strip()
+        # Harness 后处理
+        detected_lang = lang_param or info.language
+        text = post_process(text, detected_lang)
+        # segments 也过一遍
+        for seg in segments:
+            seg["text"] = post_process(seg["text"], detected_lang)
         elapsed = time.perf_counter() - t0
 
         return {
