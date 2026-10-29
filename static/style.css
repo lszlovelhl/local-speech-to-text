@@ -752,6 +752,20 @@ body.mode-conference .stickers-conf .sticker {
 .ghost-btn:hover { background: rgba(120,120,128,0.16); }
 .ghost-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
+/* 弹窗删除按钮：复用 ghost-btn，仅补充语义色与功能态，不重设计 */
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 10px;
+}
+.danger-btn {
+    color: var(--red);
+    background: rgba(255, 59, 48, 0.1);
+}
+.danger-btn:hover { background: rgba(255, 59, 48, 0.16); }
+.danger-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
 /* ===== Toast ===== */
 .toast {
     position: fixed;

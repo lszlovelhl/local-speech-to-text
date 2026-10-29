@@ -76,6 +76,17 @@ def test_transcribe_missing_file(client):
     assert resp.status_code == 422
 
 
+def test_transcribe_missing_file_chinese_message(client):
+    """缺 file 字段的 422 应返回中文友好提示，不外露英文 Field required。"""
+    resp = client.post("/api/transcribe", data={"language": "zh"})
+    assert resp.status_code == 422
+    body = resp.json()
+    assert isinstance(body["detail"], str)
+    assert "文件" in body["detail"]
+    assert "Field required" not in body["detail"]
+    assert "msg" not in body  # 不再回传 FastAPI 默认英文错误数组结构
+
+
 def test_transcribe_no_extension(client):
     """无扩展名文件应被明确拒绝（400，不允许穿透到 ASR）。"""
     resp = client.post(

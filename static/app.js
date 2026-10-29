@@ -92,6 +92,7 @@ let starting = false; // 防止 getUserMedia 异步返回前重复点击触发�
 let isProcessing = false;
 let lastResultText = "";
 let lastTapeObjectUrl = null;
+let currentTapeId = null; // 当前弹窗打开的历史条目 id，用于手动删除
 let chunkFailedNotified = false; // 会议切片失败提示去抖，避免连续 toast 刷屏
 
 // 录音安全上限：单次最长 10 分钟，到点自动停止，防止异常失控占用麦克风
@@ -315,6 +316,10 @@ async function openTapeModal(h) {
     $("modalTitle").textContent = formatHistoryLabel(h.ts);
     $("modalTime").textContent = fmtTime(Number(h.duration) || 0);
     $("modalText").textContent = String(h.text || "");
+    // 记录当前条目；无 id 的坏数据不暴露删除操作
+    currentTapeId = (h && typeof h.id === "string" && h.id) ? h.id : null;
+    const delBtn = $("modalDelete");
+    if (delBtn) delBtn.disabled = !currentTapeId;
     // 先释放上一条录音的临时 URL，避免内存泄漏
     revokeTapeAudioUrl();
     const audio = $("modalAudio");
@@ -337,6 +342,9 @@ function closeTapeModal() {
     const modal = $("tapeModal");
     modal.classList.add("closing");
     revokeTapeAudioUrl();
+    currentTapeId = null;
+    const delBtn = $("modalDelete");
+    if (delBtn) delBtn.disabled = true;
     setTimeout(() => {
         modal.classList.remove("open", "closing");
     }, 200);
@@ -344,6 +352,24 @@ function closeTapeModal() {
 
 $("modalClose").addEventListener("click", closeTapeModal);
 $("tapeModal").querySelector(".tape-modal-backdrop").addEventListener("click", closeTapeModal);
+
+// 手动删除当前历史条目：同步清 IndexedDB 音频 blob，两列列表即时刷新
+$("modalDelete").addEventListener("click", () => {
+    if (!currentTapeId) return;
+    try {
+        revokeTapeAudioUrl();
+        history = history.filter((h) => !(h && h.id === currentTapeId));
+        deleteAudio(currentTapeId); // 静默清理，失败不打断主流程
+        saveHistory();
+        renderHistory();
+        currentTapeId = null;
+        closeTapeModal();
+        showToast("已删除");
+    } catch (e) {
+        console.warn("delete history failed:", e);
+        showToast("删除失败，请重试");
+    }
+});
 
 function escapeHtml(s) {
     return String(s == null ? "" : s)
@@ -651,6 +677,14 @@ async function processChunkQueue() {
     chunkProcessing = false;
 }
 
+// 等待队列真正排空（含正在飞行中的切片请求），供会议停止后合并文本使用
+async function waitChunkQueueDrained() {
+    for (let i = 0; i < 900; i++) {
+        if (!chunkProcessing && chunkQueue.length === 0) return;
+        await new Promise((r) => setTimeout(r, 100));
+    }
+}
+
 function stopVAD() {
     if (vadRafId) cancelAnimationFrame(vadRafId);
     vadRafId = null;
@@ -728,16 +762,29 @@ async function startRecording() {
                 const ext = mediaRecorder && mediaRecorder.mimeType.includes("ogg") ? "ogg" : "webm";
                 submitAudio(blob, `recording.${ext}`, false, duration, blob);
             } else {
-                // 会议模式：最后一段切片并入串行队列处理，失败隔离不影响已出文字
+                // 会议模式：末片并入串行队列；无论有无末片都等待队列（含在飞切片）排空，
+                // 确保所有切片文本已追加到 lastResultText 后再合并入库
                 if (currentChunkChunks.length > 0) {
                     const finalBlob = new Blob(currentChunkChunks, { type: mediaRecorder ? mediaRecorder.mimeType : "" });
-                    if (finalBlob.size > 0) {
-                        chunkQueue.push(finalBlob);
-                        await processChunkQueue();
-                    }
+                    if (finalBlob.size > 0) chunkQueue.push(finalBlob);
+                    currentChunkChunks = [];
                 }
-                if (lastResultText && lastResultText.trim() && !resultText.classList.contains("placeholder")) {
-                    addHistory("conference", lastResultText, duration, []);
+                processChunkQueue();
+                await waitChunkQueueDrained();
+
+                // 合并规范化：仅折叠多余连续空白/换行，不改写识别文字内容
+                const mergedText = (lastResultText || "").trim().replace(/\s+/g, " ");
+                // 整段录音：chunks 全程累积，停止后一次性打包入库供回放；为空则只存文字
+                const wholeBlob = new Blob(chunks, { type: mediaRecorder ? mediaRecorder.mimeType : "" });
+                const hasWholeAudio = !!(wholeBlob && wholeBlob.size > 0);
+                if (mergedText) {
+                    addHistory(
+                        "conference",
+                        mergedText,
+                        duration,
+                        [],
+                        hasWholeAudio ? wholeBlob : null
+                    );
                 }
             }
             cleanupRecording();
@@ -757,6 +804,7 @@ async function startRecording() {
         segmentList.classList.add("hidden");
         segmentList.innerHTML = "";
         lastResultText = "";
+        currentTapeId = null;
         btnCopy.disabled = true;
         btnExport.disabled = true;
 
@@ -809,6 +857,10 @@ function cleanupRecording() {
     // 注意：不在这里强制 chunkProcessing=false，避免正在飞行中的切片请求与下一次录音并发；
     // 队列会自然排空并自行复位
     chunkQueue = [];
+    // 重置本轮缓冲，避免上一轮整段音频/文本串到下一次录音
+    chunks = [];
+    currentChunkChunks = [];
+    currentTapeId = null;
     mediaRecorder = null;
     isRecording = false;
     starting = false;

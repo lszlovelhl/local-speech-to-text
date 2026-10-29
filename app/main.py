@@ -10,7 +10,8 @@ import logging
 import os
 from pathlib import Path
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.concurrency import run_in_threadpool
@@ -52,6 +53,26 @@ async def _read_bounded(file: UploadFile, max_size: int) -> bytes:
             )
         chunks.append(chunk)
     return b"".join(chunks)
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_handler(request: Request, exc: RequestValidationError):
+    """把 FastAPI 默认英文 422（如缺失 file 字段）翻译为友好中文，状态码仍为 422。
+
+    注意：本 handler 只处理框架层的请求校验错误（RequestValidationError），
+    不影响路由内部主动 raise 的 HTTPException（400/422/503 等保持原样）。
+    """
+    errors = exc.errors()
+    missing_file = any(
+        err.get("type") == "missing" and (err.get("loc") or [])[-1] == "file"
+        for err in errors
+    )
+    detail = (
+        "请先选择或录制要识别的音频/视频文件"
+        if missing_file
+        else "请求参数有误，请检查上传文件与语言选择"
+    )
+    return JSONResponse(status_code=422, content={"detail": detail})
 
 
 @app.get("/health")
