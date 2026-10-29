@@ -26,13 +26,20 @@ call .venv\Scripts\activate.bat
 
 set HF_ENDPOINT=https://hf-mirror.com
 
-echo === 安装依赖 ===
-pip install -r requirements.txt --quiet
+REM 依赖就绪探测：关键包全部可导入则跳过 pip 安装，避免每次启动重复联网（与 start.sh 口径一致）
+python -c "import importlib.util,sys; mods=['fastapi','uvicorn','multipart','av','faster_whisper','pycorrector','symspellpy','opencc']; sys.exit(0 if all(importlib.util.find_spec(m) for m in mods) else 1)"
 if errorlevel 1 (
-    echo ==========================================
-    echo   错误：依赖安装失败，请检查网络后重试
-    echo ==========================================
-    exit /b 1
+    echo === 安装依赖 ===
+    pip install -r requirements.txt --quiet
+    if errorlevel 1 (
+        echo ==========================================
+        echo   错误：依赖安装失败，请检查网络后重试
+        echo   可手动执行: pip install -r requirements.txt
+        echo ==========================================
+        exit /b 1
+    )
+) else (
+    echo === 依赖已就绪，跳过安装（如需强制更新: pip install -r requirements.txt） ===
 )
 
 REM 本地 small / base 任一存在即跳过下载，与 start.sh 判断口径一致
