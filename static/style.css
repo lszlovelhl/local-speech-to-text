@@ -693,6 +693,10 @@ body.mode-conference .stickers-conf .sticker {
     transition: all 0.2s;
 }
 .upload-btn:hover { background: rgba(0,113,227,0.16); }
+.upload-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
 .file-name {
     font-size: 13px;
     color: var(--text-secondary);

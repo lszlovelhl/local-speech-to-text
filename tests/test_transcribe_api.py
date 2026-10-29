@@ -74,3 +74,38 @@ def test_transcribe_unsupported_format(client):
 def test_transcribe_missing_file(client):
     resp = client.post("/api/transcribe", data={"language": "zh"})
     assert resp.status_code == 422
+
+
+def test_transcribe_no_extension(client):
+    """无扩展名文件应被明确拒绝（400，不允许穿透到 ASR）。"""
+    resp = client.post(
+        "/api/transcribe",
+        files={"file": ("noextension", b"hello world", "application/octet-stream")},
+        data={"language": "zh"},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"]
+
+
+def test_transcribe_fake_wav_is_text(client):
+    """纯文本伪装成 .wav：解不出音频流，应友好 400 而非 500 堆栈。"""
+    resp = client.post(
+        "/api/transcribe",
+        files={"file": ("fake.wav", b"this is plain text not audio", "audio/wav")},
+        data={"language": "zh"},
+    )
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body["detail"]
+    assert "Internal Server Error" not in str(body)
+
+
+def test_transcribe_fake_mp4_is_text(client):
+    """纯文本伪装成 .mp4（视频分支跳过扩展名校验）仍须在解码探测处 400。"""
+    resp = client.post(
+        "/api/transcribe",
+        files={"file": ("fake.mp4", b"this is plain text not video", "video/mp4")},
+        data={"language": "zh"},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"]

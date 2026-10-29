@@ -88,8 +88,16 @@ let recordStartTs = 0;
 let timerInt = null;
 let chunks = [];
 let isRecording = false;
+let starting = false; // 防止 getUserMedia 异步返回前重复点击触发第二路采集
 let isProcessing = false;
 let lastResultText = "";
+let lastTapeObjectUrl = null;
+let chunkFailedNotified = false; // 会议切片失败提示去抖，避免连续 toast 刷屏
+
+// 录音安全上限：单次最长 10 分钟，到点自动停止，防止异常失控占用麦克风
+const RECORD_MAX_SECONDS = 600;
+const SUBMIT_TIMEOUT_MS = 300000; // 普通提交超时 5 分钟（大文件视频转码+识别）
+const CHUNK_TIMEOUT_MS = 90000;   // 会议切片超时 90 秒
 
 // VAD + Waveform
 let audioCtx = null;
@@ -124,6 +132,8 @@ function initDB() {
         };
         req.onsuccess = (e) => { db = e.target.result; resolve(db); };
         req.onerror = (e) => reject(e);
+        // 旧版本连接占用数据库时打开被阻塞：不卡死，交由调用方 catch 降级
+        req.onblocked = () => reject(new Error("IndexedDB blocked"));
     });
 }
 
@@ -147,6 +157,23 @@ async function getAudio(id) {
     });
 }
 
+// 删除孤儿音频：历史条目被裁剪/过期后，其 IDB blob 必须同步清除，避免只增不减占配额。
+// 事务任何失败都静默 resolve，清理逻辑绝不影响主流程。
+async function deleteAudio(id) {
+    if (!db || !id) return;
+    return new Promise((resolve) => {
+        try {
+            const tx = db.transaction("audio", "readwrite");
+            tx.objectStore("audio").delete(id);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => resolve();
+            tx.onabort = () => resolve();
+        } catch {
+            resolve();
+        }
+    });
+}
+
 const VAD_MIN_SPEECH_MS = 300;
 const VAD_MIN_SILENCE_MS = 600;
 const VAD_MAX_CHUNK_MS = 10000;
@@ -154,18 +181,43 @@ const VAD_NOISE_MEASURE_MS = 500;
 const VAD_SENSITIVITY = 2.5;
 
 // ---------- History ----------
+function isValidHistoryItem(h) {
+    return h && typeof h.id === "string" && h.id.length > 0 &&
+        typeof h.text === "string" && h.text.trim().length > 0 &&
+        Number.isFinite(h.ts);
+}
+
 function loadHistory() {
     try {
-        history = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+        let parsed = [];
+        try {
+            parsed = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+        } catch { parsed = []; }
+        if (!Array.isArray(parsed)) parsed = [];
         const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-        history = history.filter((h) => h.ts > cutoff);
+        // 单条坏数据直接剔除，不能污染整列渲染；被剔除项（过期/坏数据）同步清理 IDB 音频
+        const kept = [];
+        const stale = [];
+        parsed.forEach((h) => {
+            if (isValidHistoryItem(h) && h.ts > cutoff) kept.push(h);
+            else stale.push(h);
+        });
+        history = kept;
+        stale.forEach((h) => {
+            if (h && typeof h.id === "string" && h.id) deleteAudio(h.id);
+        });
         saveHistory();
     } catch { history = []; }
     renderHistory();
 }
 
 function saveHistory() {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+    try {
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+    } catch {
+        // 存储配额已满等情况：不阻塞主流程，仅提示
+        showToast("本地存储空间不足，历史记录可能无法完整保存");
+    }
 }
 
 function addHistory(mode, text, duration, segments, audioBlob = null) {
@@ -179,11 +231,41 @@ function addHistory(mode, text, duration, segments, audioBlob = null) {
         duration,
         segments: segments || [],
     });
-    if (history.length > 20) history = history.slice(0, 20);
+    if (history.length > 20) {
+        // 先取出被裁剪淘汰的尾部条目，删除其 IDB 音频后再保留前 20 条
+        const dropped = history.slice(20);
+        dropped.forEach((h) => {
+            if (h && typeof h.id === "string" && h.id) deleteAudio(h.id);
+        });
+        history = history.slice(0, 20);
+    }
     saveHistory();
     renderHistory();
     // Save audio blob to IndexedDB
     if (audioBlob) saveAudio(id, audioBlob);
+}
+
+function formatHistoryLabel(ts) {
+    try {
+        const d = new Date(ts);
+        if (Number.isNaN(d.getTime())) return "--";
+        return `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,"0")}`;
+    } catch { return "--"; }
+}
+
+function buildTapeCard(h) {
+    try {
+        const idx = history.indexOf(h);
+        const label = formatHistoryLabel(h.ts);
+        const text = escapeHtml(String(h.text || ""));
+        const duration = fmtTime(Number(h.duration) || 0);
+        return `<div class="tape" data-idx="${idx}" title="${text}">
+            <div class="tape-label">${escapeHtml(label)}</div>
+            <div class="tape-duration">${duration}</div>
+        </div>`;
+    } catch {
+        return "";
+    }
 }
 
 function renderHistory() {
@@ -191,62 +273,70 @@ function renderHistory() {
     const confShelf = $("tapeConf");
     if (!singleShelf || !confShelf) return;
 
-    const singles = history.filter((h) => h.mode !== "conference");
-    const confs = history.filter((h) => h.mode === "conference");
+    const singles = history.filter((h) => isValidHistoryItem(h) && h.mode !== "conference");
+    const confs = history.filter((h) => isValidHistoryItem(h) && h.mode === "conference");
 
-    singleShelf.innerHTML = singles.map((h, i) => {
-        const d = new Date(h.ts);
-        const label = `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,"0")}`;
-        return `<div class="tape" data-idx="${history.indexOf(h)}" title="${escapeHtml(h.text)}">
-            <div class="tape-label">${escapeHtml(label)}</div>
-            <div class="tape-duration">${fmtTime(h.duration||0)}</div>
-        </div>`;
-    }).join("");
+    try {
+        singleShelf.innerHTML = singles.map(buildTapeCard).join("");
+        confShelf.innerHTML = confs.map(buildTapeCard).join("");
+    } catch {
+        singleShelf.innerHTML = "";
+        confShelf.innerHTML = "";
+        return;
+    }
 
-    confShelf.innerHTML = confs.map((h) => {
-        const d = new Date(h.ts);
-        const label = `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,"0")}`;
-        return `<div class="tape" data-idx="${history.indexOf(h)}" title="${escapeHtml(h.text)}">
-            <div class="tape-label">${escapeHtml(label)}</div>
-            <div class="tape-duration">${fmtTime(h.duration||0)}</div>
-        </div>`;
-    }).join("");
-
-    // Click tape to open modal
+    // Click tape to open modal（每次渲染重新绑定，避免残留旧索引）
     document.querySelectorAll(".tape").forEach((t) => {
         t.addEventListener("click", () => {
-            const idx = parseInt(t.dataset.idx);
+            const idx = parseInt(t.dataset.idx, 10);
             const h = history[idx];
-            if (!h) return;
+            if (!isValidHistoryItem(h)) return;
             openTapeModal(h);
         });
     });
 }
 
+function revokeTapeAudioUrl() {
+    const audio = $("modalAudio");
+    if (audio) {
+        try { audio.pause(); } catch {}
+        audio.removeAttribute("src");
+        audio.load();
+    }
+    if (lastTapeObjectUrl) {
+        URL.revokeObjectURL(lastTapeObjectUrl);
+        lastTapeObjectUrl = null;
+    }
+}
+
 async function openTapeModal(h) {
     const modal = $("tapeModal");
     modal.classList.remove("closing");
-    const d = new Date(h.ts);
-    $("modalTitle").textContent = `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,"0")}`;
-    $("modalTime").textContent = fmtTime(h.duration || 0);
-    $("modalText").textContent = h.text;
-    // Load audio from IndexedDB
+    $("modalTitle").textContent = formatHistoryLabel(h.ts);
+    $("modalTime").textContent = fmtTime(Number(h.duration) || 0);
+    $("modalText").textContent = String(h.text || "");
+    // 先释放上一条录音的临时 URL，避免内存泄漏
+    revokeTapeAudioUrl();
     const audio = $("modalAudio");
     audio.style.display = "none";
-    audio.removeAttribute("src");
-    if (h.id) {
-        const blob = await getAudio(h.id);
-        if (blob) {
-            audio.src = URL.createObjectURL(blob);
-            audio.style.display = "block";
-        }
-    }
     modal.classList.add("open");
+    if (h.id) {
+        try {
+            const blob = await getAudio(h.id);
+            // 等待期间用户可能已关闭弹窗，回来时再校验 open 状态，避免给隐藏的弹窗挂音频
+            if (blob && modal.classList.contains("open")) {
+                lastTapeObjectUrl = URL.createObjectURL(blob);
+                audio.src = lastTapeObjectUrl;
+                audio.style.display = "block";
+            }
+        } catch { /* 单条音频读取失败不影响文字展示 */ }
+    }
 }
 
 function closeTapeModal() {
     const modal = $("tapeModal");
     modal.classList.add("closing");
+    revokeTapeAudioUrl();
     setTimeout(() => {
         modal.classList.remove("open", "closing");
     }, 200);
@@ -256,7 +346,9 @@ $("modalClose").addEventListener("click", closeTapeModal);
 $("tapeModal").querySelector(".tape-modal-backdrop").addEventListener("click", closeTapeModal);
 
 function escapeHtml(s) {
-    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return String(s == null ? "" : s)
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
 }
 
 // ---------- Mode Theme ----------
@@ -361,18 +453,6 @@ function setupSegmented(containerId, onChange) {
             const activeBtn = container.querySelector(".seg.active");
             if (activeBtn) moveThumb(container, activeBtn);
         }
-    });
-
-    // Click-to-select support
-    btns.forEach((btn) => {
-        btn.addEventListener("click", (e) => {
-            if (!btn.classList.contains("active")) {
-                btns.forEach((b) => b.classList.remove("active"));
-                btn.classList.add("active");
-                moveThumb(container, btn);
-                onChange(btn);
-            }
-        });
     });
 }
 
@@ -485,6 +565,8 @@ function stopWave() {
 // ---------- VAD ----------
 function initVAD(stream) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    // 浏览器自动播放策略下 AudioContext 可能处于 suspended，主动恢复保证波形/VAD 有数据
+    if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
     const source = audioCtx.createMediaStreamSource(stream);
     analyser = audioCtx.createAnalyser();
     analyser.fftSize = 512;
@@ -536,9 +618,11 @@ function vadLoop() {
 
     if ((hasSpoken && longEnoughSilence) || maxChunkReached) {
         if (currentChunkChunks.length > 0) {
-            const blob = new Blob(currentChunkChunks, { type: mediaRecorder.mimeType });
-            chunkQueue.push(blob);
-            processChunkQueue();
+            const blob = new Blob(currentChunkChunks, { type: mediaRecorder ? mediaRecorder.mimeType : "" });
+            if (blob.size > 0) {
+                chunkQueue.push(blob);
+                processChunkQueue();
+            }
         }
         currentChunkChunks = [];
         chunkStartTime = now;
@@ -557,6 +641,11 @@ async function processChunkQueue() {
             await submitAudio(blob, "chunk.webm", true);
         } catch (e) {
             console.warn("chunk failed:", e);
+            // 单切片失败隔离，不影响后续切片；用户侧只提示一次
+            if (!chunkFailedNotified) {
+                chunkFailedNotified = true;
+                showToast("一段语音识别失败，已自动跳过继续");
+            }
         }
     }
     chunkProcessing = false;
@@ -571,45 +660,83 @@ function stopVAD() {
 }
 
 // ---------- 录音控制 ----------
+function releaseStream() {
+    if (mediaStream) {
+        mediaStream.getTracks().forEach((t) => { try { t.stop(); } catch {} });
+        mediaStream = null;
+    }
+}
+
 btnRecord.addEventListener("click", () => {
-    if (isProcessing) return;
+    if (isProcessing || starting) return;
     isRecording ? stopRecording() : startRecording();
 });
 
 async function startRecording() {
+    if (isRecording || starting || isProcessing) return;
+    starting = true;
+    chunkFailedNotified = false;
+
+    // 环境不支持（非安全上下文 / 旧浏览器）时给出明确提示，而不是静默失败
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
+        starting = false;
+        setStatus("error", "启动失败");
+        hintText.textContent = "当前浏览器不支持麦克风采集，请使用最新版 Chrome / Edge，并通过 localhost 或 HTTPS 访问";
+        showToast("无法访问麦克风");
+        setRecordButton("idle");
+        return;
+    }
+
     try {
         mediaStream = await navigator.mediaDevices.getUserMedia({
             audio: { noiseSuppression: true, echoCancellation: true, autoGainControl: true }
         });
-        mediaRecorder = new MediaRecorder(mediaStream);
+
+        // 拿到流但没有可用音轨（极端设备异常）
+        if (!mediaStream.getAudioTracks || mediaStream.getAudioTracks().length === 0) {
+            releaseStream();
+            throw new DOMException("未检测到音频轨", "NotFoundError");
+        }
+
+        try {
+            mediaRecorder = new MediaRecorder(mediaStream);
+        } catch (recErr) {
+            releaseStream();
+            throw recErr;
+        }
         chunks = [];
         currentChunkChunks = [];
 
         mediaRecorder.ondataavailable = (e) => {
-            if (e.data.size > 0) { chunks.push(e.data); currentChunkChunks.push(e.data); }
+            if (e.data && e.data.size > 0) { chunks.push(e.data); currentChunkChunks.push(e.data); }
+        };
+        mediaRecorder.onerror = (e) => {
+            console.warn("MediaRecorder error:", e);
+            showToast("录音出现异常，请停止后重试");
+            cleanupRecording();
         };
         mediaRecorder.onstop = async () => {
             const duration = (Date.now() - recordStartTs) / 1000;
             if (currentMode === "single") {
-                const blob = new Blob(chunks, { type: mediaRecorder.mimeType });
-                submitAudio(blob, `recording.${mediaRecorder.mimeType.includes("ogg") ? "ogg" : "webm"}`, false, duration, blob);
-            } else {
-                // Submit final chunk and wait for result
-                if (currentChunkChunks.length > 0) {
-                    try {
-                        const fd = new FormData();
-                        fd.append("file", new Blob(currentChunkChunks, { type: mediaRecorder.mimeType }), "final.webm");
-                        fd.append("language", currentLang);
-                        const resp = await fetch("/api/transcribe", { method: "POST", body: fd });
-                        const data = await resp.json();
-                        if (data.text) {
-                            resultText.classList.remove("placeholder");
-                            resultText.textContent += " " + data.text + " ";
-                            lastResultText = resultText.textContent;
-                        }
-                    } catch (e) { console.warn("final chunk failed:", e); }
+                const blob = new Blob(chunks, { type: mediaRecorder ? mediaRecorder.mimeType : "" });
+                // 空录音（立即停止 / 全程静音被浏览器丢弃）不发无效请求
+                if (!chunks.length || blob.size === 0) {
+                    showToast("未录到有效语音，请重试");
+                    cleanupRecording();
+                    return;
                 }
-                if (lastResultText && !resultText.classList.contains("placeholder")) {
+                const ext = mediaRecorder && mediaRecorder.mimeType.includes("ogg") ? "ogg" : "webm";
+                submitAudio(blob, `recording.${ext}`, false, duration, blob);
+            } else {
+                // 会议模式：最后一段切片并入串行队列处理，失败隔离不影响已出文字
+                if (currentChunkChunks.length > 0) {
+                    const finalBlob = new Blob(currentChunkChunks, { type: mediaRecorder ? mediaRecorder.mimeType : "" });
+                    if (finalBlob.size > 0) {
+                        chunkQueue.push(finalBlob);
+                        await processChunkQueue();
+                    }
+                }
+                if (lastResultText && lastResultText.trim() && !resultText.classList.contains("placeholder")) {
                     addHistory("conference", lastResultText, duration, []);
                 }
             }
@@ -619,6 +746,7 @@ async function startRecording() {
         mediaRecorder.start(250);
         recordStartTs = Date.now();
         isRecording = true;
+        starting = false;
         setRecordButton("recording");
         setStatus("recording", "录音中");
         hintText.textContent = currentMode === "conference" ? "会议模式：正在监听…" : "正在录音，点击按钮或空格停止";
@@ -632,33 +760,63 @@ async function startRecording() {
         btnCopy.disabled = true;
         btnExport.disabled = true;
 
-        timerInt = setInterval(() => { timerText.textContent = fmtTime((Date.now() - recordStartTs) / 1000); }, 200);
+        timerInt = setInterval(() => {
+            const elapsed = (Date.now() - recordStartTs) / 1000;
+            timerText.textContent = fmtTime(elapsed);
+            // 超长兜底：到上限自动停止，避免麦克风被长期占用
+            if (elapsed >= RECORD_MAX_SECONDS) {
+                showToast("录音时长已达上限，已自动停止");
+                stopRecording();
+            }
+        }, 200);
         initVAD(mediaStream);
         if (currentMode === "conference") vadLoop();
     } catch (err) {
-        const msgs = { NotAllowedError: "请在浏览器设置中允许麦克风权限", NotFoundError: "未检测到麦克风设备" };
-        setStatus("error", err.name === "NotAllowedError" ? "权限被拒绝" : "启动失败");
-        hintText.textContent = msgs[err.name] || err.message;
+        starting = false;
+        releaseStream();
+        const msgs = {
+            NotAllowedError: "麦克风权限被拒绝，请在浏览器地址栏允许麦克风后重试",
+            PermissionDeniedError: "麦克风权限被拒绝，请在浏览器地址栏允许麦克风后重试",
+            NotFoundError: "未检测到麦克风设备，请检查设备连接",
+            DevicesNotFoundError: "未检测到麦克风设备，请检查设备连接",
+            NotReadableError: "麦克风被其他应用占用，请关闭后重试",
+            TrackStartError: "麦克风被其他应用占用，请关闭后重试",
+            OverconstrainedError: "当前麦克风参数不受支持，请更换设备或浏览器",
+            SecurityError: "浏览器安全策略阻止了麦克风访问",
+        };
+        const friendly = msgs[err && err.name] || "麦克风启动失败，请检查设备状态后重试";
+        setStatus("error", "启动失败");
+        hintText.textContent = friendly;
+        showToast(friendly);
         setRecordButton("idle");
     }
 }
 
 function stopRecording() {
-    if (vadRafId) cancelAnimationFrame(vadRafId);
-    vadRafId = null;
-    if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+    if (vadRafId) { cancelAnimationFrame(vadRafId); vadRafId = null; }
+    if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        try { mediaRecorder.stop(); } catch { cleanupRecording(); }
+    } else {
+        cleanupRecording();
+    }
 }
 
 function cleanupRecording() {
     clearInterval(timerInt);
+    timerInt = null;
     stopVAD();
-    if (mediaStream) mediaStream.getTracks().forEach((t) => t.stop());
-    mediaStream = null;
-    isRecording = false;
-    setRecordButton("idle");
-    timerText.textContent = "00:00";
+    releaseStream();
+    // 注意：不在这里强制 chunkProcessing=false，避免正在飞行中的切片请求与下一次录音并发；
+    // 队列会自然排空并自行复位
     chunkQueue = [];
-    chunkProcessing = false;
+    mediaRecorder = null;
+    isRecording = false;
+    starting = false;
+    // 单次录音停止后 submitAudio 已同步进入识别态（isProcessing=true），
+    // 这里不能把按钮强行复位成 idle，避免识别中按钮状态与徽标不一致
+    if (!isProcessing) setRecordButton("idle");
+    timerText.textContent = "00:00";
+    tapeTime.textContent = "00:00";
     if (currentMode === "conference") {
         setStatus("idle", "待机");
         hintText.textContent = "可以再次录音，或按空格键继续";
@@ -667,11 +825,41 @@ function cleanupRecording() {
 
 // ---------- 空格快捷键 ----------
 document.addEventListener("keydown", (e) => {
-    if (e.code === "Space" && !e.repeat && !isProcessing) {
+    if (e.code === "Space" && !e.repeat && !isProcessing && !starting) {
         e.preventDefault();
         isRecording ? stopRecording() : startRecording();
     }
 });
+
+// ---------- 上传白名单（与后端 app/config.py 保持一致） ----------
+const AUDIO_EXTS = [".wav", ".webm", ".ogg", ".mp3", ".m4a", ".flac"];
+const VIDEO_EXTS = [".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v"];
+const MAX_AUDIO_SIZE = 100 * 1024 * 1024; // 100MB
+const MAX_VIDEO_SIZE = 200 * 1024 * 1024; // 200MB
+
+function formatSize(bytes) {
+    if (bytes >= 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
+    if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+    return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+function validateUploadFile(f) {
+    if (!f) return "未选择有效文件";
+    const name = (f.name || "未命名").toLowerCase();
+    const dot = name.lastIndexOf(".");
+    const ext = dot >= 0 ? name.slice(dot) : "";
+    const isVideo = VIDEO_EXTS.includes(ext);
+    const isAudio = AUDIO_EXTS.includes(ext);
+    if (!isVideo && !isAudio) {
+        return `不支持的格式「${ext || "无扩展名"}」，支持音频 wav/webm/ogg/mp3/m4a/flac，视频 mp4/mov/mkv/avi/webm/m4v`;
+    }
+    if (f.size === 0) return "文件为空，请选择有效的音视频文件";
+    const limit = isVideo ? MAX_VIDEO_SIZE : MAX_AUDIO_SIZE;
+    if (f.size > limit) {
+        return `文件大小超过限制（${isVideo ? "视频最大 200MB" : "音频最大 100MB"}），请截取或压缩后重试`;
+    }
+    return null;
+}
 
 // ---------- 拖拽上传 ----------
 ["dragenter", "dragover"].forEach((evt) => {
@@ -681,104 +869,191 @@ document.addEventListener("keydown", (e) => {
     dropZone.addEventListener(evt, (e) => { e.preventDefault(); dropZone.classList.remove("drag-over"); });
 });
 dropZone.addEventListener("drop", (e) => {
-    const f = e.dataTransfer.files[0];
+    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
     if (f) handleFile(f);
+    else showToast("请拖拽音视频文件到录音面板区域");
 });
 
 // ---------- 文件上传 ----------
-btnUpload.addEventListener("click", () => fileInput.click());
+btnUpload.addEventListener("click", () => { if (!isProcessing) fileInput.click(); });
 fileInput.addEventListener("change", () => {
-    const f = fileInput.files[0];
+    const f = fileInput.files && fileInput.files[0];
     if (f) handleFile(f);
+    // 重置 input，否则再次选择同一文件不会触发 change 事件
+    fileInput.value = "";
 });
 
 function handleFile(f) {
-    fileName.textContent = `${f.name} (${(f.size / 1024).toFixed(0)} KB)`;
+    const invalid = validateUploadFile(f);
+    if (invalid) {
+        fileName.textContent = "";
+        showToast(invalid);
+        return;
+    }
+    fileName.textContent = `${f.name}（${formatSize(f.size)}）`;
     submitAudio(f, f.name, false, 0);
 }
 
 // ---------- API ----------
+// 从响应体中提取面向用户的中文错误文案：
+// HTTPException.detail 可能是字符串，也可能是 FastAPI 校验错误数组；非 JSON 响应兜底
+async function extractErrorMessage(resp) {
+    let data = null;
+    try { data = await resp.json(); } catch { data = null; }
+    if (data && typeof data.detail === "string") return data.detail;
+    if (data && Array.isArray(data.detail) && data.detail.length > 0) {
+        const first = data.detail[0];
+        if (first && typeof first.msg === "string") return first.msg;
+        if (typeof first === "string") return first;
+    }
+    return `识别服务暂时不可用（HTTP ${resp.status}），请稍后重试`;
+}
+
+function resolveSubmitError(err) {
+    if (err && err.name === "AbortError") return "识别超时，请缩短录音或稍后重试";
+    if (err && err.name === "TypeError") return "无法连接识别服务，请确认后端服务已启动后重试";
+    if (err && err.message) return err.message;
+    return "识别失败，请检查文件格式后重试";
+}
+
 async function submitAudio(blob, filename, isChunk = false, duration = 0, audioBlob = null) {
     if (!isChunk) {
         isProcessing = true;
         setRecordButton("processing");
         btnUpload.disabled = true;
+        fileInput.disabled = true;
         setStatus("processing", "识别中");
+        hintText.textContent = "正在识别，请稍候…";
     }
 
     const fd = new FormData();
     fd.append("file", blob, filename);
     fd.append("language", currentLang);
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), isChunk ? CHUNK_TIMEOUT_MS : SUBMIT_TIMEOUT_MS);
+
     try {
-        const resp = await fetch("/api/transcribe", { method: "POST", body: fd });
-        const data = await resp.json();
-        if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
+        const resp = await fetch("/api/transcribe", {
+            method: "POST",
+            body: fd,
+            signal: controller.signal,
+        });
+        if (!resp.ok) throw new Error(await extractErrorMessage(resp));
+
+        let data = null;
+        try { data = await resp.json(); } catch { data = null; }
+        if (!data || typeof data !== "object") throw new Error("识别结果格式异常，请稍后重试");
 
         if (isChunk) {
-            if (data.text) {
+            const chunkText = (typeof data.text === "string" ? data.text : "").trim();
+            if (chunkText) {
                 resultText.classList.remove("placeholder");
-                resultText.textContent += (resultText.textContent.endsWith("…") || resultText.textContent.endsWith(" ") ? "" : " ") + data.text + " ";
+                const needSpace = resultText.textContent &&
+                    !resultText.textContent.endsWith(" ") &&
+                    !resultText.textContent.endsWith("…");
+                resultText.textContent += (needSpace ? " " : "") + chunkText + " ";
                 lastResultText = resultText.textContent;
             }
         } else {
+            const okText = (typeof data.text === "string" ? data.text : "").trim();
             resultText.classList.remove("placeholder", "fade-in");
             void resultText.offsetWidth;
             resultText.classList.add("fade-in");
-            resultText.textContent = data.text || "（未识别到语音）";
-            lastResultText = data.text || "";
-            metaLang.textContent = data.language;
-            metaDuration.textContent = data.duration_seconds;
-            metaProcessing.textContent = data.processing_seconds;
-            btnCopy.disabled = false;
-            btnExport.disabled = false;
+            resultText.textContent = okText || "（未识别到语音，请确认文件含清晰人声）";
+            lastResultText = okText;
+            metaLang.textContent = data.language || currentLang;
+            metaDuration.textContent = Number.isFinite(data.duration_seconds) ? data.duration_seconds : "--";
+            metaProcessing.textContent = Number.isFinite(data.processing_seconds) ? data.processing_seconds : "--";
+            btnCopy.disabled = !okText;
+            btnExport.disabled = !okText;
 
-            if (data.segments && data.segments.length > 1) {
+            // 分段时间戳渲染：过滤缺字段/空文本的坏项，缺时间戳时兜底为 0
+            const rawSegs = Array.isArray(data.segments) ? data.segments : [];
+            const validSegs = rawSegs.filter(
+                (s) => s && typeof s.text === "string" && s.text.trim()
+            );
+            if (validSegs.length > 1) {
                 segmentList.classList.remove("hidden");
-                segmentList.innerHTML = data.segments.map((s) =>
-                    `<div class="segment-item"><span class="segment-time">[${fmtTimestamp(s.start)} - ${fmtTimestamp(s.end)}]</span><span class="segment-text">${escapeHtml(s.text)}</span></div>`
-                ).join("");
+                segmentList.innerHTML = validSegs.map((s) => {
+                    const start = fmtTimestamp(Number(s.start) || 0);
+                    const end = fmtTimestamp(Number(s.end) || 0);
+                    return `<div class="segment-item"><span class="segment-time">[${start} - ${end}]</span><span class="segment-text">${escapeHtml(s.text)}</span></div>`;
+                }).join("");
             } else {
                 segmentList.classList.add("hidden");
+                segmentList.innerHTML = "";
             }
 
             setStatus("done", "完成");
-            hintText.textContent = "可以再次录音、上传文件，或按空格键继续";
-            addHistory(currentMode, data.text || "", data.duration_seconds || duration, data.segments || [], audioBlob);
+            hintText.textContent = okText
+                ? "可以再次录音、上传文件，或按空格键继续"
+                : "未识别到有效语音，可换一段清晰录音重试";
+            addHistory(currentMode, okText, data.duration_seconds || duration, validSegs, audioBlob);
         }
     } catch (err) {
         if (isChunk) {
-            console.warn("chunk transcribe failed:", err.message);
+            console.warn("chunk transcribe failed:", err);
         } else {
+            const friendly = resolveSubmitError(err);
             setStatus("error", "识别失败");
-            hintText.textContent = err.message;
-            showToast("识别失败");
+            hintText.textContent = friendly;
+            showToast(friendly);
         }
     } finally {
+        clearTimeout(timeoutId);
         if (!isChunk) {
             isProcessing = false;
             setRecordButton("idle");
             btnUpload.disabled = false;
+            fileInput.disabled = false;
         }
     }
 }
 
 // ---------- Copy / Export / Clear ----------
 btnCopy.addEventListener("click", () => {
-    if (resultText.classList.contains("placeholder")) return;
-    navigator.clipboard.writeText(resultText.textContent).then(() => showToast("已复制"));
+    if (btnCopy.disabled || resultText.classList.contains("placeholder")) return;
+    const text = resultText.textContent;
+    if (!text.trim()) return;
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+        navigator.clipboard.writeText(text)
+            .then(() => showToast("已复制"))
+            .catch(() => showToast("复制失败，请手动选中文字复制"));
+    } else {
+        // 非安全上下文 / 旧浏览器兜底，避免点了没反应也没提示
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        try {
+            document.execCommand("copy");
+            showToast("已复制");
+        } catch {
+            showToast("复制失败，请手动选中文字复制");
+        }
+        document.body.removeChild(ta);
+    }
 });
 
 btnExport.addEventListener("click", () => {
-    if (!lastResultText) return;
-    const blob = new Blob([lastResultText], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `transcript_${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-    showToast("已导出 TXT");
+    if (btnExport.disabled || !lastResultText) return;
+    try {
+        const blob = new Blob([lastResultText], { type: "text/plain;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `transcript_${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showToast("已导出 TXT");
+    } catch {
+        showToast("导出失败，请重试");
+    }
 });
 
 btnClear.addEventListener("click", () => {
@@ -789,9 +1064,13 @@ btnClear.addEventListener("click", () => {
     btnCopy.disabled = true;
     btnExport.disabled = true;
     lastResultText = "";
+    setStatus("idle", "待机");
 });
 
 // ---------- Init ----------
 loadHistory();
 applyModeTheme("single");
-initDB();
+initDB().catch(() => {
+    console.warn("IndexedDB 打开失败，历史音频将不持久化");
+    showToast("本地存储不可用，本次录音仅保留文字记录");
+});

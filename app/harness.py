@@ -5,7 +5,10 @@ ASR 后处理 harness 层 — 规则 + 开源纠错库。
 - 领域术语保护 + 文本清洗
 """
 from __future__ import annotations
+import logging
 import re
+
+logger = logging.getLogger("app.harness")
 
 # ===== 领域术语保护（不被纠错库误改）=====
 DOMAIN_TERMS = [
@@ -57,7 +60,6 @@ ZH_CORRECTIONS = {
     "网叶": "网页",
     "紧致": "仅只",
     "紧质": "仅只",
-    "紧致": "仅只",
     # === 技术词 ===
     "fastapi": "FastAPI",
     "python": "Python",
@@ -72,11 +74,12 @@ ZH_CORRECTIONS = {
 }
 
 # ===== 英文常见错误纠正 =====
+# 注意：这里只放完整短语替换，不要放单字母（如 "i"）——dict 的 replace 是
+# 子串全局替换，会把 this/city 等词里的小写 i 一并改大写。
+# 独立代词 "I" 的大写由 _fix_en 末尾的正则 \bi\b 处理。
 EN_CORRECTIONS = {
     "this will include in that": "this will be included in that",
     "will include in": "will be included in",
-    "i": "I",
-    "don't want to say": "don't want to say",
 }
 
 # 初始化纠错库（懒加载）
@@ -103,7 +106,12 @@ def _get_pycorrector():
             import pycorrector
             pycorrector.set_model_path(None)  # 使用内置词典
             _pycorrector = pycorrector
-        except Exception:
+        except Exception as e:
+            # 常见原因：环境未装 torch（pycorrector 深层依赖）。
+            # 此时优雅降级为纯规则纠错，绝不让识别请求因此 500。
+            logger.warning(
+                "pycorrector 不可用，降级为规则纠错: %s: %s", type(e).__name__, e
+            )
             _pycorrector = False
     return _pycorrector
 
@@ -112,15 +120,31 @@ def _get_symspell():
     global _symspell
     if _symspell is None:
         try:
+            from importlib import resources
             from symspellpy import SymSpell, Verbosity
-            import pkg_resources
+
             sym = SymSpell(max_dictionary_edit_distance=2, prefix_length=7)
-            dict_path = pkg_resources.resource_filename(
-                "symspellpy", "frequency_dictionary_en_82_765.txt"
+            # 用 importlib.resources 定位包内词典，避免依赖在 Python 3.13 环境
+            # 已不可用的 pkg_resources；文件系统用路径，打包环境退回文本流。
+            dict_resource = resources.files("symspellpy").joinpath(
+                "frequency_dictionary_en_82_765.txt"
             )
-            sym.load_dictionary(dict_path, term_index=0, count_index=1)
+            if dict_resource.is_file():
+                dict_source = str(dict_resource)
+            else:
+                dict_source = dict_resource.open("r", encoding="utf-8")
+
+            ok = sym.load_dictionary(dict_source, term_index=0, count_index=1)
+            if not ok:
+                raise RuntimeError("symspell load_dictionary 返回 False，词典未载入")
             _symspell = (sym, Verbosity)
-        except Exception:
+        except Exception as e:
+            # 任何加载失败都优雅降级为英文规则纠错，绝不让识别请求 500
+            logger.warning(
+                "symspell 不可用，英文拼写纠错降级为规则处理: %s: %s",
+                type(e).__name__,
+                e,
+            )
             _symspell = False
     return _symspell
 
@@ -170,6 +194,7 @@ def _fix_zh(text: str) -> str:
     # pycorrector 纠错（先保护英文单词和领域术语）
     corrector = _get_pycorrector()
     if corrector and corrector is not False:
+        original = text
         try:
             text, en_placeholders = _protect_english(text)
             text, term_placeholders = _protect_terms(text)
@@ -178,7 +203,10 @@ def _fix_zh(text: str) -> str:
             text = _restore_terms(text, term_placeholders)
             text = _restore_terms(text, en_placeholders)
         except Exception:
-            pass
+            # 纠错内部报错（含缺失 torch 引发的深层异常）时回退纠错前原文，
+            # 防止 __EN_0__ / __TERM_1__ 这类占位符泄露到最终文本
+            logger.debug("pycorrector.correct 调用失败，回退原文", exc_info=True)
+            text = original
 
     # 中英文之间加空格
     text = re.sub(r'([\u4e00-\u9fff])([a-zA-Z])', r'\1 \2', text)

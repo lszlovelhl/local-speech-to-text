@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import os
 import tempfile
-from typing import Tuple
 
 from app.config import ALLOWED_EXTENSIONS, MAX_AUDIO_SIZE
 

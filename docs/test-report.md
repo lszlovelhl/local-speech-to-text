@@ -6,11 +6,16 @@
 
 ```bash
 # 常规测试（mock 模型，不下载权重，秒级完成）
-python -m pytest -q
+# pytest.ini 的 addopts 已默认 -m "not real_model"
+.venv/bin/python -m pytest -m "not real_model" -q
+# 等价简写：
+.venv/bin/python -m pytest -q
 
-# 真实模型测试（需先下载模型）
-python -m pytest -m real_model -v
+# 真实模型测试（需先执行 download_model.sh，耗时较长）
+.venv/bin/python -m pytest -m real_model -v
 ```
+
+> 说明：视频音轨提取、前端波形、IndexedDB 磁带收藏、深浅模式等属于前端/集成行为，未纳入 pytest 自动化用例，以下手动验证表覆盖。
 
 ### 测试用例覆盖
 
@@ -26,7 +31,8 @@ python -m pytest -m real_model -v
 | HTTP API | 缺少 file 参数 → 422 | ✅ |
 | 音频处理 | 正常 WAV 文件通过校验 | ✅ |
 | 音频处理 | 空文件 → 400 | ✅ |
-| 音频处理 | 超过 10MB → 400 | ✅ |
+| 音频处理 | 超过 100MB → 400 | ✅ |
+| 音频处理 | 视频扩展名由 main.py/config.py 分流至 200MB 上限 | ✅ 配置层 |
 | 音频处理 | 不支持的格式 (.txt) → 400 | ✅ |
 | 音频处理 | WebM 格式通过 | ✅ |
 | 音频处理 | 扩展名大小写不敏感 | ✅ |
@@ -34,7 +40,7 @@ python -m pytest -m real_model -v
 | 真实模型 | chinese.wav 中文识别 | ✅ 已验证 |
 | 真实模型 | english.wav 英文识别 | ✅ 已验证 |
 
-**总计：16 passed, 3 deselected（真实模型测试默认跳过）**
+**总计：最近一次实跑 `22 passed, 3 deselected`（真实模型测试默认跳过；用例数随迭代增补，最终以 `.venv/bin/python -m pytest -q` 实际输出为准）。**
 
 ## 二、手动验证（已在 macOS 实机验证）
 
@@ -52,7 +58,11 @@ python -m pytest -m real_model -v
 ## 三、已知问题与限制
 
 1. **说话人区分**：不支持（题目范围外），会议模式不区分谁在说话
-2. **极端嘈杂环境**：浏览器降噪 + VAD 在普通办公室够用，咖啡厅/马路边识别率会下降
-3. **并发**：单用户串行处理，多用户同时请求会排队
+2. **极端嘈杂环境**：浏览器降噪 + 前端 VAD + 后端 vad_filter 三层防护在普通办公室够用，咖啡厅/马路边等强噪声场景识别率会下降
+3. **并发**：单用户串行处理（`_transcribe_lock`），多用户同时请求会排队
 4. **Python 版本**：要求 Python 3.12 或 3.13，3.14 因 av 库无预编译包暂不支持
-5. **模型精度**：small 模型在口音较重或极端嘈杂环境下准确率会下降
+5. **模型精度**：small 模型在口音较重、极端嘈杂或专业术语场景下准确率会下降；base 回退模型速度优先、准确率更低
+6. **纠错降级**：pycorrector / symspellpy / OpenCC 任一可选依赖缺失时，harness 自动降级为内置规则纠错，识别主流程不受影响，但纠错效果减弱
+7. **历史收藏边界**：磁带记录仅存于当前浏览器（localStorage 元数据 + IndexedDB 音频），最多 20 条、24 小时自动清除，清除浏览器数据后不可恢复
+8. **视频格式兼容**：加密 DRM、特殊编码或损坏文件可能无法被 PyAV 解码，接口返回 400 提示无法解码
+9. **会议模式延迟**：按切片 HTTP 请求提交（非 WebSocket 流式），存在切片级处理延迟，不适合长直播字幕场景

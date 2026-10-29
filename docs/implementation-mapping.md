@@ -22,8 +22,8 @@
 |------|------|
 | **题目要求** | 可通过上传音频文件独立验证识别功能 |
 | **实现位置** | `static/index.html` 文件上传区 + `app/main.py` POST /api/transcribe |
-| **实现方式** | `<input type="file" accept=".wav,.webm,.ogg,.mp3,.m4a,.flac">`，上传后与录音走同一后端接口 |
-| **设计原因** | 复用同一后端识别逻辑，避免代码重复；多格式支持由 PyAV 底层解码保证 |
+| **实现方式** | `<input type="file" accept=".wav,.webm,.ogg,.mp3,.m4a,.flac,.mp4,.mov,.mkv,.avi,.m4v">`；音频 ≤100MB，视频 ≤200MB（PyAV 提取音轨）；上传后与录音走同一后端接口 |
+| **设计原因** | 复用同一后端识别逻辑，避免代码重复；多格式与视频音轨由 PyAV 底层解码保证 |
 | **验证方式** | 选择 samples/chinese.wav → 上传 → 返回识别文本 |
 
 ### F3：本地 ASR 模型（中英文）
@@ -52,7 +52,7 @@
 |------|------|
 | **题目要求** | 能够处理常见错误，而不是直接崩溃 |
 | **实现位置** | 前端 `static/app.js` 错误处理 + 后端 `app/main.py` 异常捕获 |
-| **实现方式** | 前端区分：麦克风权限拒绝、无录音设备、录音为空；后端区分：空文件、格式不支持、超过 10MB、模型加载失败。均返回友好提示而非 500 |
+| **实现方式** | 前端区分：麦克风权限拒绝、无录音设备、录音为空；后端区分：空文件、格式不支持、音频超 100MB / 视频超 200MB、无法解码、模型加载失败。均返回友好提示而非 500 |
 | **设计原因** | 题目明确要求"不直接崩溃"，每个异常路径都有对应的测试用例 |
 | **验证方式** | 拒绝麦克风权限 → 页面提示"请允许麦克风访问"；上传 .txt 文件 → 提示格式不支持 |
 
@@ -66,7 +66,7 @@
 |------|------|
 | **题目要求** | 实时转换，保持录音状态直到手动停止（会议模式） |
 | **实现位置** | `static/app.js` → 会议模式 VAD 切片逻辑 |
-| **实现方式** | 持续录音，AnalyserNode 检测音量变化，自适应阈值（2.5× 底噪），检测到停嘴（500ms 静音）自动切片提交后端识别，文字实时追加到结果区 |
+| **实现方式** | 持续录音，AnalyserNode 检测音量变化，自适应阈值（2.5× 底噪），检测到停嘴（前端最短静音 600ms；后端 VAD 500ms）自动切片提交后端识别，文字实时追加到结果区 |
 | **设计原因** | 三层防护：浏览器硬件降噪（采集端）+ 自适应阈值（前端 VAD）+ 后端 vad_filter（模型端），确保嘈杂环境下也能正确切片 |
 | **验证方式** | 切到会议模式 → 持续说话 → 停嘴后自动出字 → 继续说 → 文字追加 |
 
@@ -88,8 +88,9 @@
 | 项目 | 说明 |
 |------|------|
 | **题目要求** | multipart/form-data：file（音频文件）+ language（zh/en/auto） |
-| **实现位置** | `app/main.py` → `@app.post("/api/transcribe")` |
-| **返回格式** | `{"text": "...", "language": "zh", "duration_seconds": 3.5, "processing_seconds": 1.2}` |
+| **实现位置** | `app/main.py` → `@app.post("/api/transcribe")`；大小上限与扩展名白名单在 `app/config.py` |
+| **大小限制** | 音频 ≤ 100MB（wav/webm/ogg/mp3/m4a/flac）；视频 ≤ 200MB（mp4/mov/mkv/avi/webm/m4v，提取音轨） |
+| **返回格式** | `{"text": "...", "language": "zh", "duration_seconds": 3.5, "processing_seconds": 1.2, "segments": [{"start": 0.0, "end": 2.41, "text": "..."}]}` |
 | **测试位置** | `tests/test_transcribe_api.py` |
 
 ---
@@ -98,7 +99,7 @@
 
 | 题目要求 | 实现位置 | 说明 |
 |----------|----------|------|
-| 自动化测试（mock 模型） | `tests/test_health.py`、`test_transcribe_api.py`、`test_audio.py` | 16 个用例，秒级完成 |
+| 自动化测试（mock 模型） | `tests/test_health.py`、`test_transcribe_api.py`、`test_audio.py` | mock 用例秒级完成，最近一次实跑 22 passed；最终以 pytest 实际输出为准 |
 | 真实模型测试 | `tests/test_real_model.py` | 标记 `@pytest.mark.real_model`，默认跳过 |
 | pytest.ini 配置 | `pytest.ini` | `addopts = -m "not real_model"` |
 | 样本音频 | `samples/chinese.wav`、`english.wav`、`reference.txt` | macOS `say` 命令合成 |
@@ -154,7 +155,7 @@
 |----------|------|
 | 用户登录及权限管理 | ✅ 未实现 |
 | 数据库存储 | ✅ 未实现 |
-| 语音识别历史记录管理 | ✅ 未实现 |
+| 服务端语音识别历史记录管理（数据库持久化） | ✅ 未实现；仅前端浏览器本地磁带收藏（20 条 / 24h） |
 | 说话人识别与声纹分析 | ✅ 未实现 |
 | 音频降噪算法开发 | ✅ 未实现（使用浏览器硬件降噪） |
 | 语音翻译 | ✅ 未实现 |
@@ -177,7 +178,7 @@
 | 5 | 识别结果正确返回并展示在 Web 页面 | ✅ |
 | 6 | 可以通过上传音频文件独立验证识别功能 | ✅ |
 | 7 | 能够处理常见错误，而不是直接崩溃 | ✅ |
-| 8 | 具有实际执行过的自动化测试及真实模型验证 | ✅ 16 passed + 实机验证 |
+| 8 | 具有实际执行过的自动化测试及真实模型验证 | ✅ mock 套件全绿（最近实跑 22 passed, 3 deselected）+ 实机验证 |
 | 9 | 提交完整源码、运行文档、测试结果及 OpenCode 开发证据 | ✅ 全部在 GitHub |
 
 ---
@@ -188,9 +189,11 @@
 local-speech-to-text/
 ├── app/
 │   ├── __init__.py
-│   ├── main.py          # FastAPI 路由
-│   ├── asr.py           # ASR 模型封装
-│   └── audio.py         # 音频校验
+│   ├── main.py          # FastAPI 路由与编排
+│   ├── asr.py           # ASR 模型封装（懒加载/串行锁/segments）
+│   ├── harness.py       # 识别后处理（纠错/繁简/清洗，可选依赖降级）
+│   ├── audio.py         # 上传校验与临时文件
+│   └── config.py         # 大小上限与扩展名白名单集中配置
 ├── static/
 │   ├── index.html       # Web 页面
 │   ├── style.css        # 苹果风格样式

@@ -141,8 +141,8 @@ def transcribe_with_timing(audio_path: str, language: Optional[str] = None) -> d
                 text_parts.append(text)
 
         text = " ".join(text_parts).strip()
-        # Harness 后处理
-        detected_lang = lang_param or info.language
+        # Harness 后处理；模型未返回检测语言时归一化为 auto，避免响应 language 为 null
+        detected_lang = lang_param or info.language or "auto"
         text, final_lang = post_process(text, detected_lang)
         # segments 也过一遍
         for seg in segments:

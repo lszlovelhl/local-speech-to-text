@@ -1,5 +1,7 @@
 # Local Speech-to-Text — 完整测试报告
 
+> **说明（历史快照）**：本文件为 2026-10-27 一轮实测的留档快照（含当时进程 PID 与原始 curl 输出，其中测试数量、个别问题结论已随迭代变化）。当前最新测试口径与用例覆盖以 [`docs/test-report.md`](docs/test-report.md) 为准；自动化套件以 `.venv/bin/python -m pytest -m "not real_model" -q` 实跑输出为准。
+
 - **测试时间**：2026-10-27 22:52 (Asia/Shanghai)
 - **测试主机**：macOS（BSD 用户态）
 - **服务进程**：PID 2983，`/Library/Frameworks/Python.framework/Versions/3.13/.../Python -m uvicorn app.main:app --host 127.0.0.1 --port 8000`
