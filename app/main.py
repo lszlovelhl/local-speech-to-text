@@ -18,7 +18,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from app import asr
 from app.audio import validate_upload, save_temp_audio, cleanup_temp, AudioValidationError
-from app.config import VIDEO_EXTENSIONS, MAX_AUDIO_SIZE, MAX_VIDEO_SIZE
+from app.config import VIDEO_EXTENSIONS, ALLOWED_EXTENSIONS, MAX_AUDIO_SIZE, MAX_VIDEO_SIZE
 
 logger = logging.getLogger("app.main")
 
@@ -113,6 +113,17 @@ async def transcribe(
     filename = file.filename or "audio.wav"
     ext = os.path.splitext(filename)[1].lower()
     max_size = MAX_VIDEO_SIZE if ext in VIDEO_EXTENSIONS else MAX_AUDIO_SIZE
+
+    # 扩展名白名单（音频 + 视频），给出完整的支持清单
+    if ext not in ALLOWED_EXTENSIONS and ext not in VIDEO_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"不支持的文件格式 '{ext}'；"
+                f"音频支持 {', '.join(sorted(ALLOWED_EXTENSIONS))}，"
+                f"视频支持 {', '.join(sorted(VIDEO_EXTENSIONS))}"
+            ),
+        )
 
     content_length = file.size or 0
     if content_length > max_size:
