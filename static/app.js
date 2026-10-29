@@ -123,6 +123,7 @@ let speechStartTs = 0;
 let currentChunkChunks = [];
 let chunkStartTime = 0;
 let chunkQueue = [];
+let conferenceSlices = []; // 会议模式逐片切片记录，停止后归入历史分段供单独复制导出
 let chunkProcessing = false;
 
 // History
@@ -325,6 +326,36 @@ async function openTapeModal(h) {
     $("modalTitle").textContent = formatHistoryLabel(h.ts);
     $("modalTime").textContent = fmtTime(Number(h.duration) || 0);
     $("modalText").textContent = String(h.text || "");
+    // 会议多段切片：弹窗内逐片展示并支持单独复制导出
+    const slicesBox = $("modalSlices");
+    const segs = Array.isArray(h.segments)
+        ? h.segments.filter((s) => s && typeof s.text === "string" && s.text.trim())
+        : [];
+    if (segs.length > 1) {
+        slicesBox.classList.remove("hidden");
+        slicesBox.innerHTML = segs.map((s, i) => {
+            const st = fmtTimestamp(Number(s.start) || 0);
+            const en = fmtTimestamp(Number(s.end) || 0);
+            return `<div class="slice-row"><span class="slice-time">[${st}-${en}]</span><span class="slice-text">${escapeHtml(s.text)}</span><button class="slice-copy" data-i="${i}">复制片段</button></div>`;
+        }).join("");
+        slicesBox.querySelectorAll(".slice-copy").forEach((btn) => {
+            btn.addEventListener("click", () => {
+                const seg = segs[Number(btn.dataset.i)];
+                const txt = String(seg ? seg.text : "").trim();
+                if (!txt) return;
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(txt)
+                        .then(() => showToast("已复制该片段"))
+                        .catch(() => showToast("复制失败，请手动选中文字"));
+                } else {
+                    showToast("当前浏览器不支持一键复制");
+                }
+            });
+        });
+    } else {
+        slicesBox.classList.add("hidden");
+        slicesBox.innerHTML = "";
+    }
     // 记录当前条目；无 id 的坏数据不暴露删除操作
     currentTapeId = (h && typeof h.id === "string" && h.id) ? h.id : null;
     const delBtn = $("modalDelete");
@@ -350,6 +381,8 @@ async function openTapeModal(h) {
 function closeTapeModal() {
     const modal = $("tapeModal");
     modal.classList.add("closing");
+    const slicesBox = $("modalSlices");
+    if (slicesBox) { slicesBox.classList.add("hidden"); slicesBox.innerHTML = ""; }
     revokeTapeAudioUrl();
     currentTapeId = null;
     const delBtn = $("modalDelete");
@@ -508,6 +541,8 @@ setupSegmented("modeGroup", (btn) => {
     resultText.classList.add("placeholder");
     segmentList.classList.add("hidden");
     lastResultText = "";
+    lastSegments = [];
+    conferenceSlices = [];
 });
 
 window.addEventListener("resize", () => {
@@ -783,6 +818,15 @@ async function startRecording() {
 
                 // 合并规范化：仅折叠多余连续空白/换行，不改写识别文字内容
                 const mergedText = (lastResultText || "").trim().replace(/\s+/g, " ");
+                // 逐片切片换算为相对时间分段，供磁带弹窗内单独复制导出
+                const slices = conferenceSlices.map((s, i) => {
+                    const start = Math.max(0, (s.ts - recordStartTs) / 1000);
+                    const next = conferenceSlices[i + 1];
+                    const end = next
+                        ? Math.max(start + 0.5, (next.ts - recordStartTs) / 1000)
+                        : start + 4;
+                    return { start, end, text: s.text };
+                });
                 // 整段录音：chunks 全程累积，停止后一次性打包入库供回放；为空则只存文字
                 const wholeBlob = new Blob(chunks, { type: mediaRecorder ? mediaRecorder.mimeType : "" });
                 const hasWholeAudio = !!(wholeBlob && wholeBlob.size > 0);
@@ -791,7 +835,7 @@ async function startRecording() {
                         "conference",
                         mergedText,
                         duration,
-                        [],
+                        slices,
                         hasWholeAudio ? wholeBlob : null
                     );
                 }
@@ -866,6 +910,7 @@ function cleanupRecording() {
     // 注意：不在这里强制 chunkProcessing=false，避免正在飞行中的切片请求与下一次录音并发；
     // 队列会自然排空并自行复位
     chunkQueue = [];
+    conferenceSlices = [];
     // 重置本轮缓冲，避免上一轮整段音频/文本串到下一次录音
     chunks = [];
     currentChunkChunks = [];
@@ -1200,6 +1245,8 @@ async function submitAudio(blob, filename, isChunk = false, duration = 0, audioB
                     !resultText.textContent.endsWith("…");
                 resultText.textContent += (needSpace ? " " : "") + chunkText + " ";
                 lastResultText = resultText.textContent;
+                // 记录单片切片（含绝对时间戳），停止合并时换算为相对时间分段
+                conferenceSlices.push({ text: chunkText, ts: Date.now() });
             }
         } else {
             applyFileResult(data, duration, audioBlob);

@@ -1081,6 +1081,51 @@ body.mode-conference .stickers-conf .sticker {
     overflow-y: auto;
     white-space: pre-wrap;
 }
+
+/* 会议切片列表：逐片展示 + 单独复制，独立滚动避免弹窗被长文本撑高 */
+.modal-slices {
+    margin-top: 10px;
+    max-height: 150px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.slice-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: rgba(120, 120, 128, 0.12);
+}
+.slice-time {
+    flex: none;
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-top: 3px;
+    font-variant-numeric: tabular-nums;
+}
+.slice-text {
+    flex: 1;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.slice-copy {
+    flex: none;
+    border: none;
+    border-radius: 6px;
+    padding: 3px 10px;
+    font-size: 11px;
+    background: rgba(0, 113, 227, 0.14);
+    color: #0071e3;
+    cursor: pointer;
+    font-family: inherit;
+}
+.slice-copy:hover { background: rgba(0, 113, 227, 0.24); }
 @media (max-width: 480px) {
     .app { padding: 24px 12px 40px; }
     .title { font-size: 24px; }

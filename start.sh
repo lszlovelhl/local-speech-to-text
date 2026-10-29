@@ -52,16 +52,32 @@ source .venv/bin/activate
 # 国内镜像加速（备用）
 export HF_ENDPOINT=https://hf-mirror.com
 
-echo "=== 安装依赖 ==="
-if ! pip install --upgrade pip --quiet; then
-    echo "警告：pip 升级失败，继续尝试安装项目依赖"
-fi
-if ! pip install -r requirements.txt; then
-    echo "=========================================="
-    echo "  错误：依赖安装失败，请检查网络后重试"
-    echo "  可手动执行: pip install -r requirements.txt"
-    echo "=========================================="
-    exit 1
+# 依赖就绪探测：关键包全部可导入即跳过 pip 安装，避免每次启动重复联网安装。
+# 探测使用 importlib.find_spec，不触发真实导入，速度快、不挑 pip 版本。
+deps_ready() {
+    python - <<'PY'
+import importlib.util, sys
+# (安装名对应导入名) 任一缺失即视为未就绪
+mods = ["fastapi", "uvicorn", "multipart", "av",
+        "faster_whisper", "pycorrector", "symspellpy", "opencc"]
+sys.exit(0 if all(importlib.util.find_spec(m) for m in mods) else 1)
+PY
+}
+
+if deps_ready; then
+    echo "=== 依赖已就绪，跳过安装（如需强制更新：pip install -r requirements.txt） ==="
+else
+    echo "=== 安装依赖 ==="
+    if ! pip install --upgrade pip --quiet; then
+        echo "警告：pip 升级失败，继续尝试安装项目依赖"
+    fi
+    if ! pip install -r requirements.txt; then
+        echo "=========================================="
+        echo "  错误：依赖安装失败，请检查网络后重试"
+        echo "  可手动执行: pip install -r requirements.txt"
+        echo "=========================================="
+        exit 1
+    fi
 fi
 
 # 如果本地没有模型文件，自动下载（默认 small，准确率更高；base 为回退）
