@@ -759,6 +759,19 @@ body.mode-conference .stickers-conf .sticker {
     min-width: 84px;
     text-align: right;
 }
+.upload-cancel {
+    border: 1px solid var(--border);
+    background: var(--result-bg);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-family: inherit;
+    border-radius: 8px;
+    padding: 4px 10px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: color 0.15s, background 0.15s;
+}
+.upload-cancel:hover { color: var(--red); background: rgba(255, 59, 48, 0.1); }
 
 /* ===== Result ===== */
 .result-meta {

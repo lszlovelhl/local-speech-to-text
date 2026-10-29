@@ -82,6 +82,7 @@ const themeToggle = $("themeToggle");
 const uploadProgress = $("uploadProgress");
 const uploadProgressBar = $("uploadProgressBar");
 const uploadProgressText = $("uploadProgressText");
+const uploadCancel = $("uploadCancel");
 
 // ---------- State ----------
 let currentLang = "auto";
@@ -1024,6 +1025,8 @@ function hideUploadProgress() {
     uploadProgressBar.style.width = "0%";
 }
 
+let activeUploadXhr = null; // 当前进行中的文件上传，供取消按钮调用 abort
+
 function submitFileWithProgress(blob, filename, audioBlob = null) {
     return new Promise((resolve) => {
         const fd = new FormData();
@@ -1033,14 +1036,23 @@ function submitFileWithProgress(blob, filename, audioBlob = null) {
         const xhr = new XMLHttpRequest();
         xhr.open("POST", "/api/transcribe", true);
         xhr.timeout = SUBMIT_TIMEOUT_MS;
+        let userAborted = false;
+        activeUploadXhr = xhr;
 
         showUploadProgress("准备上传…");
+        uploadCancel.disabled = false;
         isProcessing = true;
         setRecordButton("processing");
         btnUpload.disabled = true;
         fileInput.disabled = true;
         setStatus("processing", "识别中");
         hintText.textContent = "正在上传文件，请稍候…";
+
+        // 暴露取消入口：用户点击取消时置标记并中断 XHR
+        xhr.__cancel = () => {
+            userAborted = true;
+            xhr.abort();
+        };
 
         xhr.upload.onprogress = (e) => {
             if (e.lengthComputable && e.total > 0) {
@@ -1073,6 +1085,16 @@ function submitFileWithProgress(blob, filename, audioBlob = null) {
             finishFileSubmit();
             resolve();
         };
+        // 用户主动取消走 onabort，与网络错误区分开，不报错
+        xhr.onabort = () => {
+            if (userAborted) {
+                setStatus("idle", "待机");
+                hintText.textContent = "已取消上传，可以重新选择文件";
+                showToast("已取消上传");
+            }
+            finishFileSubmit();
+            resolve();
+        };
         xhr.onerror = () => {
             const msg = "无法连接识别服务，请确认后端服务已启动后重试";
             setStatus("error", "识别失败");
@@ -1101,12 +1123,20 @@ function submitFileWithProgress(blob, filename, audioBlob = null) {
 
     function finishFileSubmit() {
         hideUploadProgress();
+        uploadCancel.disabled = true;
+        if (activeUploadXhr === xhr) activeUploadXhr = null;
         isProcessing = false;
         setRecordButton("idle");
         btnUpload.disabled = false;
         fileInput.disabled = false;
     }
 }
+
+uploadCancel.addEventListener("click", () => {
+    if (activeUploadXhr && typeof activeUploadXhr.__cancel === "function") {
+        activeUploadXhr.__cancel();
+    }
+});
 
 async function submitAudio(blob, filename, isChunk = false, duration = 0, audioBlob = null) {
     if (!isChunk) {
@@ -1247,6 +1277,9 @@ themeToggle.addEventListener("click", () => {
     applyTheme(next);
 });
 applyTheme((() => { try { return localStorage.getItem("stt_theme"); } catch (e) { return null; } })());
+
+// 取消按钮初始禁用，仅在上传进行中可点
+uploadCancel.disabled = true;
 
 // ---------- Init ----------
 loadHistory();
