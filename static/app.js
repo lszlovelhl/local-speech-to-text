@@ -78,6 +78,10 @@ const reelLeft = $("reelLeft");
 const reelRight = $("reelRight");
 const vuBar = $("vuBar");
 const tapeTime = $("tapeTime");
+const themeToggle = $("themeToggle");
+const uploadProgress = $("uploadProgress");
+const uploadProgressBar = $("uploadProgressBar");
+const uploadProgressText = $("uploadProgressText");
 
 // ---------- State ----------
 let currentLang = "auto";
@@ -943,7 +947,7 @@ function handleFile(f) {
         return;
     }
     fileName.textContent = `${f.name}（${formatSize(f.size)}）`;
-    submitAudio(f, f.name, false, 0);
+    submitFileWithProgress(f, f.name);
 }
 
 // ---------- API ----------
@@ -966,6 +970,142 @@ function resolveSubmitError(err) {
     if (err && err.name === "TypeError") return "无法连接识别服务，请确认后端服务已启动后重试";
     if (err && err.message) return err.message;
     return "识别失败，请检查文件格式后重试";
+}
+
+// ---------- 文件转写结果渲染（录音上传 / 单文件上传共用） ----------
+function applyFileResult(data, duration, audioBlob) {
+    const okText = (typeof data.text === "string" ? data.text : "").trim();
+    resultText.classList.remove("placeholder", "fade-in");
+    void resultText.offsetWidth;
+    resultText.classList.add("fade-in");
+    resultText.textContent = okText || "（未识别到语音，请确认文件含清晰人声）";
+    lastResultText = okText;
+    metaLang.textContent = data.language || currentLang;
+    metaDuration.textContent = Number.isFinite(data.duration_seconds) ? data.duration_seconds : "--";
+    metaProcessing.textContent = Number.isFinite(data.processing_seconds) ? data.processing_seconds : "--";
+    btnCopy.disabled = !okText;
+    btnExport.disabled = !okText;
+
+    // 分段时间戳渲染：过滤缺字段/空文本的坏项，缺时间戳时兜底为 0
+    const rawSegs = Array.isArray(data.segments) ? data.segments : [];
+    const validSegs = rawSegs.filter(
+        (s) => s && typeof s.text === "string" && s.text.trim()
+    );
+    if (validSegs.length > 1) {
+        segmentList.classList.remove("hidden");
+        segmentList.innerHTML = validSegs.map((s) => {
+            const start = fmtTimestamp(Number(s.start) || 0);
+            const end = fmtTimestamp(Number(s.end) || 0);
+            return `<div class="segment-item"><span class="segment-time">[${start} - ${end}]</span><span class="segment-text">${escapeHtml(s.text)}</span></div>`;
+        }).join("");
+    } else {
+        segmentList.classList.add("hidden");
+        segmentList.innerHTML = "";
+    }
+
+    setStatus("done", "完成");
+    hintText.textContent = okText
+        ? "可以再次录音、上传文件，或按空格键继续"
+        : "未识别到有效语音，可换一段清晰录音重试";
+    addHistory(currentMode, okText, data.duration_seconds || duration, validSegs, audioBlob);
+}
+
+// ---------- 上传进度条（XHR 原生支持 upload.onprogress，fetch 不支持上传进度） ----------
+function setUploadProgress(ratio, label) {
+    uploadProgressBar.style.width = `${Math.round(ratio * 100)}%`;
+    uploadProgressText.textContent = label;
+}
+function showUploadProgress(label) {
+    uploadProgress.classList.remove("hidden");
+    setUploadProgress(0, label);
+}
+function hideUploadProgress() {
+    uploadProgress.classList.add("hidden");
+    uploadProgressBar.style.width = "0%";
+}
+
+function submitFileWithProgress(blob, filename, audioBlob = null) {
+    return new Promise((resolve) => {
+        const fd = new FormData();
+        fd.append("file", blob, filename);
+        fd.append("language", currentLang);
+
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "/api/transcribe", true);
+        xhr.timeout = SUBMIT_TIMEOUT_MS;
+
+        showUploadProgress("准备上传…");
+        isProcessing = true;
+        setRecordButton("processing");
+        btnUpload.disabled = true;
+        fileInput.disabled = true;
+        setStatus("processing", "识别中");
+        hintText.textContent = "正在上传文件，请稍候…";
+
+        xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable && e.total > 0) {
+                const ratio = e.loaded / e.total;
+                setUploadProgress(
+                    ratio,
+                    ratio >= 1 ? "上传完成，识别中…" : `已上传 ${Math.round(ratio * 100)}%`
+                );
+            }
+        };
+        xhr.upload.onloadstart = () => setUploadProgress(0, "正在上传…");
+
+        xhr.onload = () => {
+            let data = null;
+            try { data = JSON.parse(xhr.responseText); } catch { data = null; }
+
+            if (xhr.status >= 200 && xhr.status < 300 && data && typeof data === "object") {
+                setUploadProgress(1, "识别完成");
+                applyFileResult(data, 0, audioBlob);
+            } else {
+                let msg = `识别服务返回错误（HTTP ${xhr.status}）`;
+                if (data) {
+                    if (typeof data.detail === "string") msg = data.detail;
+                    else if (Array.isArray(data.detail) && data.detail[0]) msg = data.detail[0].msg || data.detail[0];
+                }
+                setStatus("error", "识别失败");
+                hintText.textContent = msg;
+                showToast(msg);
+            }
+            finishFileSubmit();
+            resolve();
+        };
+        xhr.onerror = () => {
+            const msg = "无法连接识别服务，请确认后端服务已启动后重试";
+            setStatus("error", "识别失败");
+            hintText.textContent = msg;
+            showToast(msg);
+            finishFileSubmit();
+            resolve();
+        };
+        xhr.ontimeout = () => {
+            const msg = "识别超时，请缩短文件时长或稍后重试";
+            setStatus("error", "识别失败");
+            hintText.textContent = msg;
+            showToast(msg);
+            finishFileSubmit();
+            resolve();
+        };
+
+        try {
+            xhr.send(fd);
+        } catch (err) {
+            showToast(resolveSubmitError(err));
+            finishFileSubmit();
+            resolve();
+        }
+    });
+
+    function finishFileSubmit() {
+        hideUploadProgress();
+        isProcessing = false;
+        setRecordButton("idle");
+        btnUpload.disabled = false;
+        fileInput.disabled = false;
+    }
 }
 
 async function submitAudio(blob, filename, isChunk = false, duration = 0, audioBlob = null) {
@@ -1008,40 +1148,7 @@ async function submitAudio(blob, filename, isChunk = false, duration = 0, audioB
                 lastResultText = resultText.textContent;
             }
         } else {
-            const okText = (typeof data.text === "string" ? data.text : "").trim();
-            resultText.classList.remove("placeholder", "fade-in");
-            void resultText.offsetWidth;
-            resultText.classList.add("fade-in");
-            resultText.textContent = okText || "（未识别到语音，请确认文件含清晰人声）";
-            lastResultText = okText;
-            metaLang.textContent = data.language || currentLang;
-            metaDuration.textContent = Number.isFinite(data.duration_seconds) ? data.duration_seconds : "--";
-            metaProcessing.textContent = Number.isFinite(data.processing_seconds) ? data.processing_seconds : "--";
-            btnCopy.disabled = !okText;
-            btnExport.disabled = !okText;
-
-            // 分段时间戳渲染：过滤缺字段/空文本的坏项，缺时间戳时兜底为 0
-            const rawSegs = Array.isArray(data.segments) ? data.segments : [];
-            const validSegs = rawSegs.filter(
-                (s) => s && typeof s.text === "string" && s.text.trim()
-            );
-            if (validSegs.length > 1) {
-                segmentList.classList.remove("hidden");
-                segmentList.innerHTML = validSegs.map((s) => {
-                    const start = fmtTimestamp(Number(s.start) || 0);
-                    const end = fmtTimestamp(Number(s.end) || 0);
-                    return `<div class="segment-item"><span class="segment-time">[${start} - ${end}]</span><span class="segment-text">${escapeHtml(s.text)}</span></div>`;
-                }).join("");
-            } else {
-                segmentList.classList.add("hidden");
-                segmentList.innerHTML = "";
-            }
-
-            setStatus("done", "完成");
-            hintText.textContent = okText
-                ? "可以再次录音、上传文件，或按空格键继续"
-                : "未识别到有效语音，可换一段清晰录音重试";
-            addHistory(currentMode, okText, data.duration_seconds || duration, validSegs, audioBlob);
+            applyFileResult(data, duration, audioBlob);
         }
     } catch (err) {
         if (isChunk) {
@@ -1118,6 +1225,28 @@ btnClear.addEventListener("click", () => {
     lastResultText = "";
     setStatus("idle", "待机");
 });
+
+// ---------- 主题切换（手动覆盖系统偏好，持久化到 localStorage） ----------
+function getSystemTheme() {
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+function applyTheme(theme) {
+    if (theme === "light" || theme === "dark") {
+        document.documentElement.setAttribute("data-theme", theme);
+    } else {
+        document.documentElement.removeAttribute("data-theme");
+    }
+    // 图标反映当前主题：深色显示太阳（点击转浅色），浅色显示月亮（点击转深色）
+    const effective = document.documentElement.getAttribute("data-theme") || getSystemTheme();
+    themeToggle.textContent = effective === "dark" ? "☀️" : "🌙";
+}
+themeToggle.addEventListener("click", () => {
+    const current = document.documentElement.getAttribute("data-theme") || getSystemTheme();
+    const next = current === "dark" ? "light" : "dark";
+    try { localStorage.setItem("stt_theme", next); } catch (e) {}
+    applyTheme(next);
+});
+applyTheme((() => { try { return localStorage.getItem("stt_theme"); } catch (e) { return null; } })());
 
 // ---------- Init ----------
 loadHistory();
