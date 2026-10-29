@@ -130,23 +130,26 @@ def transcribe_with_timing(audio_path: str, language: Optional[str] = None) -> d
 
         segments = []
         text_parts = []
+        forced = lang_param is not None
+        # 模型未返回检测语言时归一化为 auto，避免响应 language 为 null
+        detected_lang = lang_param or info.language or "auto"
         for seg in segments_iter:
-            text = seg.text.strip()
-            if text:
-                segments.append({
-                    "start": round(seg.start, 2),
-                    "end": round(seg.end, 2),
-                    "text": text,
-                })
-                text_parts.append(text)
+            raw = seg.text.strip()
+            if not raw:
+                continue
+            seg_text, _ = post_process(raw, detected_lang, forced=forced)
+            # 强制语言过滤后为空（如中文模式下整段是英文发音）则丢弃该分段
+            if not seg_text:
+                continue
+            segments.append({
+                "start": round(seg.start, 2),
+                "end": round(seg.end, 2),
+                "text": seg_text,
+            })
+            text_parts.append(seg_text)
 
         text = " ".join(text_parts).strip()
-        # Harness 后处理；模型未返回检测语言时归一化为 auto，避免响应 language 为 null
-        detected_lang = lang_param or info.language or "auto"
-        text, final_lang = post_process(text, detected_lang)
-        # segments 也过一遍
-        for seg in segments:
-            seg["text"], _ = post_process(seg["text"], detected_lang)
+        text, final_lang = post_process(text, detected_lang, forced=forced)
         elapsed = time.perf_counter() - t0
 
         return {

@@ -1025,10 +1025,16 @@ function resolveSubmitError(err) {
 // ---------- 文件转写结果渲染（录音上传 / 单文件上传共用） ----------
 function applyFileResult(data, duration, audioBlob) {
     const okText = (typeof data.text === "string" ? data.text : "").trim();
+    // 强制语言模式下被过滤为空时，给出明确的“切换语言”引导，而不是笼统说没声音
+    const emptyHint = data.language === "zh"
+        ? "当前为中文模式：未得到中文结果；若说的是英文，可切换 English 或自动模式重试"
+        : data.language === "en"
+        ? "当前为英文模式：未得到英文结果；若说的是中文，可切换中文或自动模式重试"
+        : "（未识别到语音，请确认文件含清晰人声）";
     resultText.classList.remove("placeholder", "fade-in");
     void resultText.offsetWidth;
     resultText.classList.add("fade-in");
-    resultText.textContent = okText || "（未识别到语音，请确认文件含清晰人声）";
+    resultText.textContent = okText || emptyHint;
     lastResultText = okText;
     metaLang.textContent = data.language || currentLang;
     metaDuration.textContent = Number.isFinite(data.duration_seconds) ? data.duration_seconds : "--";
@@ -1057,7 +1063,7 @@ function applyFileResult(data, duration, audioBlob) {
     setStatus("done", "完成");
     hintText.textContent = okText
         ? "可以再次录音、上传文件，或按空格键继续"
-        : "未识别到有效语音，可换一段清晰录音重试";
+        : emptyHint;
     addHistory(currentMode, okText, data.duration_seconds || duration, validSegs, audioBlob);
 }
 

@@ -76,3 +76,35 @@ def test_pycorrector_failure_falls_back_to_raw_text(monkeypatch):
     # 回退为纠错前原文（规则表可能微调，这里只断言占位符已清除且无异常抛出）
     assert "你好" in out
 
+
+# ===== 强制语言模式：剔除串语内容 =====
+
+def test_forced_zh_strips_plain_english_keeps_terms():
+    """强制中文：普通英文词剔除，技术缩写（CPU/API）保留。"""
+    out, _ = harness.post_process("你好 hello world 测试 CPU API", "zh", forced=True)
+    assert "hello" not in out.lower()
+    assert "world" not in out.lower()
+    assert "你好" in out
+    assert "CPU" in out
+    assert "API" in out
+
+
+def test_forced_en_strips_chinese():
+    """强制英文：中文字符全部剔除。"""
+    out, _ = harness.post_process("Hello world 你好 this test", "en", forced=True)
+    assert "你好" not in out
+    assert "Hello" in out
+
+
+def test_auto_mode_keeps_mixed_language():
+    """auto 模式不做硬过滤，中英混说保留。"""
+    out, _ = harness.post_process("你好 hello world 混合", "auto", forced=False)
+    assert "你好" in out
+    assert "hello" in out.lower()
+
+
+def test_forced_zh_pure_english_becomes_empty():
+    """强制中文下整段英文发音应清洗为空，由前端提示无有效中文结果。"""
+    out, _ = harness.post_process("hello world programming only", "zh", forced=True)
+    assert out.strip() == ""
+

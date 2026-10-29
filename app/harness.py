@@ -91,6 +91,13 @@ EN_ACRONYMS = {
 }
 _ACRONYM_LOWER = {a.lower() for a in EN_ACRONYMS}
 
+# 强制中文模式下允许混留的英文 token（技术缩写 / 品牌名 / 常用外来词）；
+# 其余普通英文词属于“在中文模式下误识别出来的英文发音”，硬剔除。
+_ZH_KEEP_LATIN = _ACRONYM_LOWER | {
+    "fastapi", "python", "whisper", "openai", "github",
+    "app", "wifi", "bluetooth", "usb", "pdf",
+}
+
 # 初始化纠错库（懒加载）
 _pycorrector = None
 _symspell = None
@@ -289,7 +296,29 @@ def _cleanup(text: str) -> str:
     return text.strip()
 
 
-def post_process(text: str, language: str = "auto") -> tuple[str, str]:
+def _enforce_zh(text: str) -> str:
+    """强制中文：剔除普通英文词，仅保留白名单技术缩写 / 外来词。"""
+    def _repl(m):
+        raw = m.group(0)
+        key = re.sub(r"[^a-zA-Z]", "", raw).lower()
+        return raw if key in _ZH_KEEP_LATIN else ""
+    out = re.sub(r"[A-Za-z][A-Za-z0-9'.\-]*", _repl, text)
+    out = re.sub(r"[ \t]{2,}", " ", out)
+    # 英文词被删后残留的英文标点单独清掉，中文标点保留
+    out = re.sub(r"\s*[,.!?;:]\s*", " ", out)
+    out = re.sub(r"[，。！？；：、]{2,}", lambda m: m.group(0)[0], out)
+    return out.strip(" \t,.;:!?，。！？；：、")
+
+
+def _enforce_en(text: str) -> str:
+    """强制英文：剔除全部中文字符（缩写/技术词不受影响，因为本就不含中文）。"""
+    out = re.sub(r"[一-鿿]+", "", text)
+    out = re.sub(r"[，。！？；：、]+", " ", out)
+    out = re.sub(r"[ \t]{2,}", " ", out)
+    return out.strip(" \t,.;:!?，。！？；：、")
+
+
+def post_process(text: str, language: str = "auto", forced: bool = False) -> tuple[str, str]:
     """ASR 后处理入口。返回 (修正后文本, 修正后语言)。"""
     if not text:
         return text, language
@@ -304,8 +333,9 @@ def post_process(text: str, language: str = "auto") -> tuple[str, str]:
         except Exception:
             pass
 
-    # 文本反推：如果检测到英文但输出大量中文字符，说明检测错了
-    if language == "en" or language == "auto":
+    # 文本反推：仅在非强制（auto / 模型自动检测）时允许纠正语言；
+    # 用户显式选定 zh/en 时以用户选择为准，不再反推翻转
+    if not forced and (language == "en" or language == "auto"):
         zh_chars = len(re.findall(r'[\u4e00-\u9fff]', text))
         en_words = len(re.findall(r'[a-zA-Z]+', text))
         if zh_chars > en_words * 2:
@@ -318,5 +348,12 @@ def post_process(text: str, language: str = "auto") -> tuple[str, str]:
     else:
         text = _fix_zh(text)
         text = _fix_en(text)
+
+    # 强制语言硬约束：zh 不留普通英文词，en 不留中文；auto 模式允许中英混说
+    if forced:
+        if language == "zh":
+            text = _enforce_zh(text)
+        elif language == "en":
+            text = _enforce_en(text)
 
     return text, language
