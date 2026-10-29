@@ -1124,7 +1124,7 @@ function submitFileWithProgress(blob, filename, audioBlob = null) {
     function finishFileSubmit() {
         hideUploadProgress();
         uploadCancel.disabled = true;
-        if (activeUploadXhr === xhr) activeUploadXhr = null;
+        activeUploadXhr = null; // 同一时刻只允许一个文件上传，直接清空句柄即可
         isProcessing = false;
         setRecordButton("idle");
         btnUpload.disabled = false;
