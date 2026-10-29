@@ -83,6 +83,7 @@ const uploadProgress = $("uploadProgress");
 const uploadProgressBar = $("uploadProgressBar");
 const uploadProgressText = $("uploadProgressText");
 const uploadCancel = $("uploadCancel");
+const btnRetry = $("btnRetry");
 
 // ---------- State ----------
 let currentLang = "auto";
@@ -96,6 +97,9 @@ let isRecording = false;
 let starting = false; // 防止 getUserMedia 异步返回前重复点击触发第二路采集
 let isProcessing = false;
 let lastResultText = "";
+let lastSegments = []; // 最近一次识别的有效分段（用于带时间戳导出 TXT）
+let lastUploadBlob = null; // 最近一次文件上传内容，用于失败后重试
+let lastUploadName = "";
 let lastTapeObjectUrl = null;
 let currentTapeId = null; // 当前弹窗打开的历史条目 id，用于手动删除
 let chunkFailedNotified = false; // 会议切片失败提示去抖，避免连续 toast 刷屏
@@ -992,6 +996,7 @@ function applyFileResult(data, duration, audioBlob) {
     const validSegs = rawSegs.filter(
         (s) => s && typeof s.text === "string" && s.text.trim()
     );
+    lastSegments = validSegs;
     if (validSegs.length > 1) {
         segmentList.classList.remove("hidden");
         segmentList.innerHTML = validSegs.map((s) => {
@@ -1041,6 +1046,8 @@ function submitFileWithProgress(blob, filename, audioBlob = null) {
 
         showUploadProgress("准备上传…");
         uploadCancel.disabled = false;
+        btnRetry.classList.add("hidden");
+        btnRetry.disabled = true;
         isProcessing = true;
         setRecordButton("processing");
         btnUpload.disabled = true;
@@ -1057,13 +1064,20 @@ function submitFileWithProgress(blob, filename, audioBlob = null) {
         xhr.upload.onprogress = (e) => {
             if (e.lengthComputable && e.total > 0) {
                 const ratio = e.loaded / e.total;
-                setUploadProgress(
-                    ratio,
-                    ratio >= 1 ? "上传完成，识别中…" : `已上传 ${Math.round(ratio * 100)}%`
-                );
+                const pct = ratio >= 1 ? "上传完成，识别中…" : `已上传 ${Math.round(ratio * 100)}%`;
+                const shortName = filename.length > 18 ? filename.slice(0, 17) + "…" : filename;
+                setUploadProgress(ratio, `${shortName} · ${pct}`);
             }
         };
         xhr.upload.onloadstart = () => setUploadProgress(0, "正在上传…");
+
+        // 失败时保留文件内容并展示“重试上传”按钮（用户主动取消不展示）
+        function rememberForRetry() {
+            lastUploadBlob = blob;
+            lastUploadName = filename;
+            btnRetry.classList.remove("hidden");
+            btnRetry.disabled = false;
+        }
 
         xhr.onload = () => {
             let data = null;
@@ -1081,6 +1095,7 @@ function submitFileWithProgress(blob, filename, audioBlob = null) {
                 setStatus("error", "识别失败");
                 hintText.textContent = msg;
                 showToast(msg);
+                rememberForRetry();
             }
             finishFileSubmit();
             resolve();
@@ -1100,6 +1115,7 @@ function submitFileWithProgress(blob, filename, audioBlob = null) {
             setStatus("error", "识别失败");
             hintText.textContent = msg;
             showToast(msg);
+            rememberForRetry();
             finishFileSubmit();
             resolve();
         };
@@ -1108,6 +1124,7 @@ function submitFileWithProgress(blob, filename, audioBlob = null) {
             setStatus("error", "识别失败");
             hintText.textContent = msg;
             showToast(msg);
+            rememberForRetry();
             finishFileSubmit();
             resolve();
         };
@@ -1116,6 +1133,7 @@ function submitFileWithProgress(blob, filename, audioBlob = null) {
             xhr.send(fd);
         } catch (err) {
             showToast(resolveSubmitError(err));
+            rememberForRetry();
             finishFileSubmit();
             resolve();
         }
@@ -1136,6 +1154,12 @@ uploadCancel.addEventListener("click", () => {
     if (activeUploadXhr && typeof activeUploadXhr.__cancel === "function") {
         activeUploadXhr.__cancel();
     }
+});
+
+btnRetry.addEventListener("click", () => {
+    if (isProcessing || !lastUploadBlob) return;
+    btnRetry.classList.add("hidden");
+    submitFileWithProgress(lastUploadBlob, lastUploadName);
 });
 
 async function submitAudio(blob, filename, isChunk = false, duration = 0, audioBlob = null) {
@@ -1230,7 +1254,18 @@ btnCopy.addEventListener("click", () => {
 btnExport.addEventListener("click", () => {
     if (btnExport.disabled || !lastResultText) return;
     try {
-        const blob = new Blob([lastResultText], { type: "text/plain;charset=utf-8" });
+        let content;
+        if (lastSegments && lastSegments.length > 1) {
+            // 带时间戳分段导出，便于对照音视频定位
+            content = lastSegments.map((s) => {
+                const start = fmtTimestamp(Number(s.start) || 0);
+                const end = fmtTimestamp(Number(s.end) || 0);
+                return `[${start} - ${end}] ${s.text.trim()}`;
+            }).join("\n\n");
+        } else {
+            content = lastResultText;
+        }
+        const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
@@ -1239,7 +1274,7 @@ btnExport.addEventListener("click", () => {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        showToast("已导出 TXT");
+        showToast(lastSegments && lastSegments.length > 1 ? "已导出带时间戳 TXT" : "已导出 TXT");
     } catch {
         showToast("导出失败，请重试");
     }
@@ -1253,6 +1288,11 @@ btnClear.addEventListener("click", () => {
     btnCopy.disabled = true;
     btnExport.disabled = true;
     lastResultText = "";
+    lastSegments = [];
+    lastUploadBlob = null;
+    lastUploadName = "";
+    btnRetry.classList.add("hidden");
+    btnRetry.disabled = true;
     setStatus("idle", "待机");
 });
 

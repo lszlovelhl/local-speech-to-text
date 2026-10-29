@@ -82,6 +82,15 @@ EN_CORRECTIONS = {
     "will include in": "will be included in",
 }
 
+# 常见英文缩写：句首出现时保持全大写，避免句首大写规则只保留首字母（如 ok → OK）
+EN_ACRONYMS = {
+    "OK", "IT", "AI", "API", "CPU", "GPU", "UI", "UX", "URL", "HTTP", "HTTPS",
+    "PDF", "USB", "CEO", "FAQ", "ID", "OS", "SDK", "APP", "VAD", "ASR",
+    "JSON", "TCP", "IP", "DNS", "SQL", "CSV", "HTML", "CSS", "CLI", "IDE",
+    "SaaS", "IoT", "MP3", "MP4", "AI", "BT", "WiFi", "DNS",
+}
+_ACRONYM_LOWER = {a.lower() for a in EN_ACRONYMS}
+
 # 初始化纠错库（懒加载）
 _pycorrector = None
 _symspell = None
@@ -224,6 +233,11 @@ def _fix_en(text: str) -> str:
             words = text.split()
             corrected_words = []
             for word in words:
+                # 已知缩写（api/ai/cpu 等）不交给 symspell，避免被词典噪声误改（api→apr）
+                letters = re.sub(r"[^A-Za-z]", "", word).lower()
+                if letters in _ACRONYM_LOWER:
+                    corrected_words.append(word)
+                    continue
                 # 跳过短词、全大写、带标点的词
                 if len(word) <= 2 or word.isupper() or not word.isalpha():
                     corrected_words.append(word)
@@ -241,11 +255,25 @@ def _fix_en(text: str) -> str:
     for wrong, right in EN_CORRECTIONS.items():
         text = text.replace(wrong, right)
 
-    # 句首大写
-    sentences = text.split('. ')
-    sentences = [s[0].upper() + s[1:] if s else s for s in sentences]
-    text = '. '.join(sentences)
-    text = re.sub(r'\bi\b', 'I', text)
+    # 句首大写：普通词首字母大写；已知缩写保持全大写；已是全大写的不破坏
+    sentences = text.split(". ")
+    new_sentences = []
+    for s in sentences:
+        if not s:
+            new_sentences.append(s)
+            continue
+        m = re.match(r"^(\s*)([A-Za-z]+)(.*)$", s)
+        if not m:
+            new_sentences.append(s)
+            continue
+        lead, word, rest = m.groups()
+        if word.upper() in EN_ACRONYMS:
+            word = word.upper()
+        elif not word.isupper():
+            word = word[0].upper() + word[1:]
+        new_sentences.append(lead + word + rest)
+    text = ". ".join(new_sentences)
+    text = re.sub(r"\bi\b", "I", text)
     text = re.sub(r' +', ' ', text).strip()
     return text
 
