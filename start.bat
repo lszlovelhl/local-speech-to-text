@@ -12,7 +12,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-REM 虚拟环境不存在或损坏（缺解释器）时重建
+REM 虚拟环境不存在时创建；依赖导入失败时在下方自动重建
 if not exist ".venv\Scripts\python.exe" (
     echo === 首次运行，创建虚拟环境 ===
     python -m venv .venv
@@ -26,10 +26,13 @@ call .venv\Scripts\activate.bat
 
 set HF_ENDPOINT=https://hf-mirror.com
 
-REM 依赖就绪探测：关键包全部可导入则跳过 pip 安装，避免每次启动重复联网（与 start.sh 口径一致）
-python -c "import importlib.util,sys; mods=['fastapi','uvicorn','multipart','av','faster_whisper','pycorrector','symspellpy','opencc']; sys.exit(0 if all(importlib.util.find_spec(m) for m in mods) else 1)"
+REM 真实导入探测关键依赖；跨机器同步过来的 .venv 可能因版本/架构损坏，导入失败即重建。
+python -c "import fastapi,uvicorn,multipart,av,faster_whisper,pycorrector,symspellpy,opencc"
 if errorlevel 1 (
-    echo === 安装依赖 ===
+    echo === 依赖缺失或虚拟环境不可用，重建 .venv 并安装依赖 ===
+    if exist ".venv" rmdir /s /q ".venv"
+    python -m venv .venv
+    call .venv\Scripts\activate.bat
     pip install -r requirements.txt --quiet
     if errorlevel 1 (
         echo ==========================================
