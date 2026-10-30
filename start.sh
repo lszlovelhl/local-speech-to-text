@@ -52,22 +52,31 @@ source .venv/bin/activate
 # 国内镜像加速（备用）
 export HF_ENDPOINT=https://hf-mirror.com
 
-# 依赖就绪探测：关键包全部可导入即跳过 pip 安装，避免每次启动重复联网安装。
-# 探测使用 importlib.find_spec，不触发真实导入，速度快、不挑 pip 版本。
+# 依赖就绪探测：真实导入关键包。跨机器同步的 .venv 可能因 Python 路径/CPU 架构不兼容，
+# 仅 find_spec 会被误判为可用，因此这里必须实际导入，失败即重建虚拟环境。
 deps_ready() {
     python - <<'PY'
-import importlib.util, sys
-# (安装名对应导入名) 任一缺失即视为未就绪
+import sys
+# (安装名对应导入名) 任一缺失或导入失败即视为未就绪
 mods = ["fastapi", "uvicorn", "multipart", "av",
         "faster_whisper", "pycorrector", "symspellpy", "opencc"]
-sys.exit(0 if all(importlib.util.find_spec(m) for m in mods) else 1)
+try:
+    for mod in mods:
+        __import__(mod)
+except Exception:
+    sys.exit(1)
+sys.exit(0)
 PY
 }
 
 if deps_ready; then
     echo "=== 依赖已就绪，跳过安装（如需强制更新：pip install -r requirements.txt） ==="
 else
-    echo "=== 安装依赖 ==="
+    echo "=== 依赖缺失或虚拟环境不可用，重建 .venv 并安装依赖 ==="
+    rm -rf .venv
+    "$PY" -m venv .venv
+    # shellcheck disable=SC1091
+    source .venv/bin/activate
     if ! pip install --upgrade pip --quiet; then
         echo "警告：pip 升级失败，继续尝试安装项目依赖"
     fi
