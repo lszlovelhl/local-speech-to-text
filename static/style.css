@@ -508,9 +508,10 @@ body.mode-conference .stickers-conf .sticker {
 #waveCanvas {
     width: 100%;
     max-width: 360px;
-    height: 40px;
-    border-radius: 8px;
-    background: #1c1c1e;
+    height: 24px;
+    border-radius: 6px;
+    background: rgba(0,0,0,0.16);
+    margin-bottom: 6px;
 }
 .walkman-btn {
     display: flex;
@@ -566,11 +567,11 @@ body.mode-conference .stickers-conf .sticker {
 
 #waveCanvas {
     width: 100%;
-    max-width: 400px;
-    height: 60px;
-    margin-bottom: 16px;
-    border-radius: 12px;
-    background: var(--result-bg);
+    max-width: 360px;
+    height: 24px;
+    margin-bottom: 6px;
+    border-radius: 6px;
+    background: rgba(0,0,0,0.16);
 }
 
 .mic-visual {
@@ -804,29 +805,31 @@ body.mode-conference .stickers-conf .sticker {
     gap: 8px;
 }
 
-/* ===== LCD 识别屏：并入录音机，录音过程中边录边看 ===== */
+/* ===== LCD 识别屏：位于机身喇叭孔与录音键之间，边录边看 ===== */
 .lcd-panel {
-    margin-top: 14px;
-    background: linear-gradient(180deg, rgba(0,0,0,0.28), rgba(0,0,0,0.16));
-    border-radius: 12px;
-    padding: 12px;
-    box-shadow: inset 0 2px 8px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.08);
+    width: 100%;
+    margin: 6px 0 10px;
+    background: linear-gradient(180deg, rgba(0,0,0,0.24), rgba(0,0,0,0.12));
+    border-radius: 10px;
+    padding: 10px 11px;
+    box-shadow: inset 0 2px 6px rgba(0,0,0,0.3);
 }
 .lcd-meta {
-    gap: 14px;
-    font-size: 11px;
-    margin-bottom: 8px;
+    gap: 12px;
+    font-size: 10px;
+    margin-bottom: 6px;
     color: rgba(255,255,255,0.55);
 }
 .lcd-meta strong { color: #dfeeff; }
 .lcd-text {
     background: rgba(8, 18, 12, 0.72);
     color: #b8ffc9;
-    min-height: 76px;
-    max-height: 180px;
+    min-height: 62px;
+    max-height: 140px;
     overflow-y: auto;
-    font-size: 14px;
-    line-height: 1.65;
+    font-size: 13px;
+    line-height: 1.6;
+    padding: 10px 12px;
     margin-bottom: 8px;
     border-radius: 8px;
     box-shadow: inset 0 1px 4px rgba(0,0,0,0.5);
@@ -835,8 +838,9 @@ body.mode-conference .stickers-conf .sticker {
 .lcd-text.placeholder { color: rgba(184,255,201,0.42); }
 .lcd-text::-webkit-scrollbar { width: 6px; }
 .lcd-text::-webkit-scrollbar-thumb { background: rgba(184,255,201,0.25); border-radius: 3px; }
-.lcd-actions { flex-wrap: wrap; }
-.lcd-panel .segment-list { border-top-color: rgba(255,255,255,0.12); max-height: 120px; }
+.lcd-actions { flex-wrap: wrap; justify-content: center; gap: 6px; }
+.lcd-actions .ghost-btn { padding: 5px 12px; font-size: 12px; min-height: 30px; }
+.lcd-panel .segment-list { border-top-color: rgba(255,255,255,0.12); max-height: 110px; }
 .lcd-panel .segment-time { color: rgba(255,255,255,0.5); }
 .lcd-panel .segment-text { color: #e8e8ec; }
 .ghost-btn {

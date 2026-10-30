@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>语音识别</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230071e3'/%3E%3Crect x='40' y='18' width='20' height='38' rx='10' fill='white'/%3E%3Cpath d='M28 46 a22 22 0 0 0 44 0 M50 68 v10' stroke='white' stroke-width='7' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
-    <link rel="stylesheet" href="/static/style.css?v=14">
+    <link rel="stylesheet" href="/static/style.css?v=15">
     <script>
         // 启动前应用已保存主题，避免闪烁
         (function () {
@@ -129,7 +129,23 @@
 
                 <!-- Controls -->
                 <div class="walkman-controls">
-                    <canvas id="waveCanvas" width="360" height="40"></canvas>
+                    <canvas id="waveCanvas" width="360" height="24"></canvas>
+                    <!-- LCD 识别屏：放在机身喇叭孔与录音键之间，边录边看 -->
+                    <div class="lcd-panel">
+                        <div class="result-meta lcd-meta">
+                            <span>语言 <strong id="metaLang">auto</strong></span>
+                            <span>时长 <strong id="metaDuration">--</strong>s</span>
+                            <span>耗时 <strong id="metaProcessing">--</strong>s</span>
+                        </div>
+                        <div id="resultText" class="result-text lcd-text placeholder">识别文字将显示在这里…</div>
+                        <div id="segmentList" class="segment-list hidden"></div>
+                        <div class="result-actions lcd-actions">
+                            <button id="btnCopy" class="ghost-btn" disabled>复制</button>
+                            <button id="btnExport" class="ghost-btn" disabled>导出 TXT</button>
+                            <button id="btnRetry" class="ghost-btn retry-btn hidden" disabled>重试上传</button>
+                            <button id="btnClear" class="ghost-btn">清空</button>
+                        </div>
+                    </div>
                     <button id="btnRecord" class="walkman-btn idle">
                         <span class="record-icon"></span>
                         <span id="btnRecordText">开始录音</span>
@@ -138,23 +154,6 @@
                         <span id="statusBadge" class="badge idle">待机</span>
                         <span id="timerText" class="timer">00:00</span>
                     </div>
-                </div>
-            </div>
-
-            <!-- LCD 识别屏：并入录音机，录音过程中边录边看 -->
-            <div class="lcd-panel">
-                <div class="result-meta lcd-meta">
-                    <span>语言 <strong id="metaLang">auto</strong></span>
-                    <span>时长 <strong id="metaDuration">--</strong>s</span>
-                    <span>耗时 <strong id="metaProcessing">--</strong>s</span>
-                </div>
-                <div id="resultText" class="result-text lcd-text placeholder">识别文字将显示在这里…</div>
-                <div id="segmentList" class="segment-list hidden"></div>
-                <div class="result-actions lcd-actions">
-                    <button id="btnCopy" class="ghost-btn" disabled>复制</button>
-                    <button id="btnExport" class="ghost-btn" disabled>导出 TXT</button>
-                    <button id="btnRetry" class="ghost-btn retry-btn hidden" disabled>重试上传</button>
-                    <button id="btnClear" class="ghost-btn">清空</button>
                 </div>
             </div>
 
@@ -229,6 +228,6 @@
         </div>
     </div>
 
-    <script src="/static/app.js?v=14"></script>
+    <script src="/static/app.js?v=15"></script>
 </body>
 </html>
