@@ -127,6 +127,12 @@ let chunkQueue = [];
 let conferenceSlices = []; // 会议模式逐片切片记录，停止后归入历史分段供单独复制导出
 let chunkProcessing = false;
 
+// 实时流式 PCM/WAV 切片：会议模式边说边送 ASR，避免依赖缺容器头的 webm 片段
+let pcmProcessor = null;
+let livePcmSamples = [];
+const LIVE_TARGET_SR = 16000;
+const LIVE_CHUNK_FLUSH_MS = 3200;
+
 // History
 let history = [];
 const HISTORY_KEY = "stt_history";
@@ -187,8 +193,8 @@ async function deleteAudio(id) {
 }
 
 const VAD_MIN_SPEECH_MS = 300;
-const VAD_MIN_SILENCE_MS = 600;
-const VAD_MAX_CHUNK_MS = 10000;
+const VAD_MIN_SILENCE_MS = 450;
+const VAD_MAX_CHUNK_MS = 3200;
 const VAD_NOISE_MEASURE_MS = 500;
 const VAD_SENSITIVITY = 2.5;
 
@@ -643,6 +649,27 @@ function initVAD(stream) {
     analyser.fftSize = 512;
     vadData = new Uint8Array(analyser.frequencyBinCount);
     source.connect(analyser);
+
+    // 会议模式实时切片：直接取 PCM 并编码 WAV，避免浏览器 webm 片段缺容器头导致后端解码失败
+    livePcmSamples = [];
+    if (audioCtx.createScriptProcessor) {
+        try {
+            pcmProcessor = audioCtx.createScriptProcessor(4096, 1, 1);
+            const zeroGain = audioCtx.createGain();
+            zeroGain.gain.value = 0; // 节点必须接入输出图才会回调，但增益为 0 不产生外放
+            source.connect(pcmProcessor);
+            pcmProcessor.connect(zeroGain);
+            zeroGain.connect(audioCtx.destination);
+            pcmProcessor.onaudioprocess = (e) => {
+                if (!isRecording || currentMode !== "conference") return;
+                const data = e.inputBuffer.getChannelData(0);
+                livePcmSamples.push(new Float32Array(data));
+            };
+        } catch (procErr) {
+            console.warn("PCM processor unavailable:", procErr);
+        }
+    }
+
     noiseFloorSamples = [];
     isMeasuringNoise = true;
     noiseFloor = 0;
@@ -651,6 +678,57 @@ function initVAD(stream) {
     speechStartTs = 0;
     silenceStartTs = 0;
     drawWave(); // start waveform
+}
+
+// PCM Float32 -> 16kHz 16-bit mono WAV，浏览器原生可解码，无需依赖 webm 容器
+function encodePcmWav(samples, sourceRate) {
+    const ratio = sourceRate / LIVE_TARGET_SR;
+    const outLen = Math.max(0, Math.floor(samples.length / ratio));
+    const pcm = new Int16Array(outLen);
+    for (let i = 0; i < outLen; i++) {
+        let s = samples[Math.floor(i * ratio)];
+        if (!Number.isFinite(s)) s = 0;
+        s = Math.max(-1, Math.min(1, s));
+        pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+    }
+    const buffer = new ArrayBuffer(44 + outLen * 2);
+    const v = new DataView(buffer);
+    const writeStr = (off, str) => {
+        for (let i = 0; i < str.length; i++) v.setUint8(off + i, str.charCodeAt(i));
+    };
+    writeStr(0, "RIFF");
+    v.setUint32(4, 36 + outLen * 2, true);
+    writeStr(8, "WAVE");
+    writeStr(12, "fmt ");
+    v.setUint32(16, 16, true);
+    v.setUint16(20, 1, true); // PCM
+    v.setUint16(22, 1, true); // mono
+    v.setUint32(24, LIVE_TARGET_SR, true);
+    v.setUint32(28, LIVE_TARGET_SR * 2, true);
+    v.setUint16(32, 2, true);
+    v.setUint16(34, 16, true);
+    writeStr(36, "data");
+    v.setUint32(40, outLen * 2, true);
+    let off = 44;
+    for (let i = 0; i < outLen; i++) { v.setInt16(off, pcm[i], true); off += 2; }
+    return new Blob([buffer], { type: "audio/wav" });
+}
+
+// 把缓冲中的 PCM 打成一片 WAV 并入串行识别队列；过短静音片直接丢弃
+function flushLivePcm() {
+    if (!livePcmSamples.length) return;
+    const total = livePcmSamples.reduce((n, arr) => n + arr.length, 0);
+    const minSamples = audioCtx ? audioCtx.sampleRate * 0.4 : 0;
+    if (total < minSamples) { livePcmSamples = []; return; }
+    const merged = new Float32Array(total);
+    let off = 0;
+    for (const arr of livePcmSamples) { merged.set(arr, off); off += arr.length; }
+    livePcmSamples = [];
+    const blob = encodePcmWav(merged, audioCtx.sampleRate);
+    if (blob.size > 2000) {
+        chunkQueue.push(blob);
+        processChunkQueue();
+    }
 }
 
 function vadLoop() {
@@ -688,14 +766,7 @@ function vadLoop() {
     const maxChunkReached = now - chunkStartTime > VAD_MAX_CHUNK_MS;
 
     if ((hasSpoken && longEnoughSilence) || maxChunkReached) {
-        if (currentChunkChunks.length > 0) {
-            const blob = new Blob(currentChunkChunks, { type: mediaRecorder ? mediaRecorder.mimeType : "" });
-            if (blob.size > 0) {
-                chunkQueue.push(blob);
-                processChunkQueue();
-            }
-        }
-        currentChunkChunks = [];
+        flushLivePcm();
         chunkStartTime = now;
         speechStartTs = 0;
         silenceStartTs = now;
@@ -709,7 +780,7 @@ async function processChunkQueue() {
     while (chunkQueue.length > 0) {
         const blob = chunkQueue.shift();
         try {
-            await submitAudio(blob, "chunk.webm", true);
+            await submitAudio(blob, "chunk.wav", true);
         } catch (e) {
             console.warn("chunk failed:", e);
             // 单切片失败隔离，不影响后续切片；用户侧只提示一次
@@ -734,6 +805,11 @@ function stopVAD() {
     if (vadRafId) cancelAnimationFrame(vadRafId);
     vadRafId = null;
     stopWave();
+    if (pcmProcessor) {
+        try { pcmProcessor.disconnect(); } catch {}
+        pcmProcessor = null;
+    }
+    livePcmSamples = [];
     if (audioCtx) { audioCtx.close().catch(() => {}); audioCtx = null; }
     analyser = null;
 }
@@ -807,13 +883,8 @@ async function startRecording() {
                 const ext = mediaRecorder && mediaRecorder.mimeType.includes("ogg") ? "ogg" : "webm";
                 submitAudio(blob, `recording.${ext}`, false, duration, blob);
             } else {
-                // 会议模式：末片并入串行队列；无论有无末片都等待队列（含在飞切片）排空，
-                // 确保所有切片文本已追加到 lastResultText 后再合并入库
-                if (currentChunkChunks.length > 0) {
-                    const finalBlob = new Blob(currentChunkChunks, { type: mediaRecorder ? mediaRecorder.mimeType : "" });
-                    if (finalBlob.size > 0) chunkQueue.push(finalBlob);
-                    currentChunkChunks = [];
-                }
+                // 会议模式：把缓冲中的末段 PCM 打成最后一片并入队列，再等待在飞切片排空
+                flushLivePcm();
                 processChunkQueue();
                 await waitChunkQueueDrained();
 
@@ -917,6 +988,7 @@ function cleanupRecording() {
     // 重置本轮缓冲，避免上一轮整段音频/文本串到下一次录音
     chunks = [];
     currentChunkChunks = [];
+    livePcmSamples = [];
     currentTapeId = null;
     mediaRecorder = null;
     isRecording = false;
