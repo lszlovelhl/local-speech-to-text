@@ -38,6 +38,8 @@ _LOCAL_MODEL_DIRS = {
 # WHISPER_MODEL 环境变量：既决定 HuggingFace 下载哪个模型，也决定本地目录的查找优先级。
 # 默认 small（准确率更高）；设为 base 则优先加载本地 base，找不到再回退 small。
 MODEL_SIZE = os.environ.get("WHISPER_MODEL", "small")
+# CPU 推理下 beam_size=1（贪心）比 beam=5 明显提速；可用 ASR_BEAM_SIZE 覆盖做 A/B 对比
+BEAM_SIZE = int(os.environ.get("ASR_BEAM_SIZE", "1"))
 
 _model = None
 _model_lock = threading.Lock()
@@ -110,18 +112,33 @@ def transcribe_with_timing(audio_path: str, language: Optional[str] = None) -> d
 
         initial_prompt = None
         if lang_param == "en":
-            initial_prompt = ("Hello, this is a clear English speech recording. "
-                               "Please transcribe everything in English only, "
-                               "with correct grammar and punctuation.")
+            initial_prompt = (
+                "Hello, this is a clear English recording for a speech-to-text tool. "
+                "Transcribe only English; do not translate to Chinese. "
+                "Common terms: Python, FastAPI, API, CPU, architecture, interface, "
+                "concurrency, deployment, test cases, version control, model, inference, "
+                "latency, accuracy, meeting notes, real-time transcription."
+            )
         elif lang_param == "zh":
-            initial_prompt = ("你好，这是一段清晰的中文语音录音。"
-                               "这是一个语音识别工具，用于将语音转成文字。"
-                               "常用词：单次识别、会议模式、识别语言、录音、上传文件。")
+            initial_prompt = (
+                "你好，这是一段中文语音录音，工具用于语音转写。"
+                "请只输出中文，不要自动翻译成英文。"
+                "常用词：项目经验、技术栈、接口、架构、并发、部署、测试用例、版本控制、"
+                "Python、FastAPI、API、CPU、模型、推理、延迟、准确率、会议记录、实时识别、麦克风、浏览器。"
+            )
+        else:
+            # auto：允许中英混说，但用领域词偏置模型，减少无依据翻译和常见术语错音
+            initial_prompt = (
+                "This is a Chinese-English mixed speech recording for a meeting and interview tool. "
+                "Keep the actual spoken words; do not translate one language into the other. "
+                "Common terms: 项目经验, 技术栈, 接口, 架构, 并发, 部署, 测试用例, 版本控制, "
+                "Python, FastAPI, API, CPU, model, inference, latency, accuracy, real-time transcription."
+            )
 
         segments_iter, info = model.transcribe(
             audio_path,
             language=lang_param,
-            beam_size=5,
+            beam_size=BEAM_SIZE,
             vad_filter=True,
             vad_parameters=dict(min_silence_duration_ms=500),
             initial_prompt=initial_prompt,

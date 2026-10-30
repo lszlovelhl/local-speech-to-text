@@ -108,3 +108,20 @@ def test_forced_zh_pure_english_becomes_empty():
     out, _ = harness.post_process("hello world programming only", "zh", forced=True)
     assert out.strip() == ""
 
+
+def test_forced_zh_cleans_homophone_terms_and_keeps_tech_tokens():
+    """强制中文：同音错字按术语表纠正，技术缩写保留，普通英文剔除。"""
+    out, _ = harness.post_process("这个捷构和接扣 Redis hello", "zh", forced=True)
+    assert "架构" in out
+    assert "接口" in out
+    assert "Redis" in out
+    assert "hello" not in out.lower()
+
+
+def test_forced_en_keeps_canonical_proper_nouns():
+    """强制英文：中文剔除，FastAPI/Python 等技术名保持规范大小写。"""
+    out, _ = harness.post_process("你好 this project uses fastapi and python", "en", forced=True)
+    assert "你好" not in out
+    assert "FastAPI" in out
+    assert "Python" in out
+

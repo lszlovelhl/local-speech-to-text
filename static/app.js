@@ -193,8 +193,8 @@ async function deleteAudio(id) {
 }
 
 const VAD_MIN_SPEECH_MS = 300;
-const VAD_MIN_SILENCE_MS = 450;
-const VAD_MAX_CHUNK_MS = 3200;
+const VAD_MIN_SILENCE_MS = 350;
+const VAD_MAX_CHUNK_MS = 2400;
 const VAD_NOISE_MEASURE_MS = 500;
 const VAD_SENSITIVITY = 2.5;
 

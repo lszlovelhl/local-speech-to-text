@@ -71,6 +71,23 @@ ZH_CORRECTIONS = {
     "gpu": "GPU",
     "uri": "URL",
     "json": "JSON",
+    # === 面试/项目场景常见同音近音错误 ===
+    "捷构": "架构",
+    "架购": "架构",
+    "接扣": "接口",
+    "并法": "并发",
+    "部暑": "部署",
+    "部数": "部署",
+    "准却率": "准确率",
+    "准去率": "准确率",
+    "测式": "测试",
+    "需球": "需求",
+    "版苯": "版本",
+    "控事": "控制",
+    "浏揽器": "浏览器",
+    "麦可风": "麦克风",
+    "项木": "项目",
+    "技束": "技术",
 }
 
 # ===== 英文常见错误纠正 =====
@@ -84,18 +101,34 @@ EN_CORRECTIONS = {
 
 # 常见英文缩写：句首出现时保持全大写，避免句首大写规则只保留首字母（如 ok → OK）
 EN_ACRONYMS = {
-    "OK", "IT", "AI", "API", "CPU", "GPU", "UI", "UX", "URL", "HTTP", "HTTPS",
+    "OK", "IT", "AI", "API", "CPU", "GPU", "UI", "UX", "URL", "URI", "HTTP", "HTTPS",
     "PDF", "USB", "CEO", "FAQ", "ID", "OS", "SDK", "APP", "VAD", "ASR",
     "JSON", "TCP", "IP", "DNS", "SQL", "CSV", "HTML", "CSS", "CLI", "IDE",
-    "SaaS", "IoT", "MP3", "MP4", "AI", "BT", "WiFi", "DNS",
+    "SaaS", "IoT", "MP3", "MP4", "BT", "WiFi", "DB", "Git", "GitHub", "Redis",
+    "MySQL", "Docker", "Linux", "Android", "iOS", "React", "Vue", "YAML", "XML",
+    "JWT", "NPM", "JS", "BE", "FE",
 }
 _ACRONYM_LOWER = {a.lower() for a in EN_ACRONYMS}
+
+# 英文专有名词 / 技术名：不交给通用拼写词典纠错，避免被改成近形普通词
+_EN_PROPER_NOUNS = {
+    "python", "fastapi", "github", "openai", "linux", "android", "ios", "docker",
+    "redis", "mysql", "postgres", "vue", "react", "angular", "kubernetes",
+    "typescript", "javascript", "whisper",
+}
+_EN_CANONICAL = {
+    "python": "Python", "fastapi": "FastAPI", "github": "GitHub", "openai": "OpenAI",
+    "linux": "Linux", "android": "Android", "ios": "iOS", "docker": "Docker",
+    "redis": "Redis", "mysql": "MySQL", "react": "React", "vue": "Vue",
+    "whisper": "Whisper",
+}
 
 # 强制中文模式下允许混留的英文 token（技术缩写 / 品牌名 / 常用外来词）；
 # 其余普通英文词属于“在中文模式下误识别出来的英文发音”，硬剔除。
 _ZH_KEEP_LATIN = _ACRONYM_LOWER | {
     "fastapi", "python", "whisper", "openai", "github",
-    "app", "wifi", "bluetooth", "usb", "pdf",
+    "app", "wifi", "bluetooth", "usb", "pdf", "git", "redis", "mysql",
+    "docker", "linux", "android", "ios", "react", "vue",
 }
 
 # 初始化纠错库（懒加载）
@@ -197,6 +230,15 @@ def _restore_terms(text: str, placeholders: dict) -> str:
     return text
 
 
+def _apply_zh_rules(text: str) -> str:
+    """轻量中文规则纠错，不触发 pycorrector，适合强制语言过滤后的快速清洗。"""
+    for wrong, right in ZH_CORRECTIONS.items():
+        text = text.replace(wrong, right)
+    text = re.sub(r'([\u4e00-\u9fff])([a-zA-Z])', r'\1 \2', text)
+    text = re.sub(r'([a-zA-Z])([\u4e00-\u9fff])', r'\1 \2', text)
+    return text
+
+
 def _fix_zh(text: str) -> str:
     """中文文本修正：规则 + pycorrector（英文单词受保护）。"""
     # 纯英文文本跳过中文纠错
@@ -204,8 +246,7 @@ def _fix_zh(text: str) -> str:
         return text
 
     # 规则兜底
-    for wrong, right in ZH_CORRECTIONS.items():
-        text = text.replace(wrong, right)
+    text = _apply_zh_rules(text)
 
     # pycorrector 纠错（先保护英文单词和领域术语）
     corrector = _get_pycorrector()
@@ -244,6 +285,9 @@ def _fix_en(text: str) -> str:
                 letters = re.sub(r"[^A-Za-z]", "", word).lower()
                 if letters in _ACRONYM_LOWER:
                     corrected_words.append(word)
+                    continue
+                if letters in _EN_PROPER_NOUNS:
+                    corrected_words.append(_EN_CANONICAL.get(letters, word))
                     continue
                 # 跳过短词、全大写、带标点的词
                 if len(word) <= 2 or word.isupper() or not word.isalpha():
@@ -353,7 +397,10 @@ def post_process(text: str, language: str = "auto", forced: bool = False) -> tup
     if forced:
         if language == "zh":
             text = _enforce_zh(text)
+            # 过滤后再跑轻量中文规则，清掉同音错字和残留空格，不触发重型纠错库
+            text = _apply_zh_rules(text)
         elif language == "en":
             text = _enforce_en(text)
+            text = text.strip()
 
     return text, language
