@@ -102,6 +102,7 @@ def _probe_media(path: str) -> None:
 async def transcribe(
     file: UploadFile = File(...),
     language: str = Form("auto"),
+    source: str = Form("file"),  # file=整文件上传；chunk=会议模式实时切片（片段 webm，放宽探测）
 ):
     if language not in ALLOWED_LANGUAGES:
         raise HTTPException(
@@ -109,13 +110,15 @@ async def transcribe(
             detail=f"不支持的语言 '{language}'，仅支持 zh / en / auto",
         )
 
+    is_chunk = source == "chunk"
+
     # 先通过 Content-Length 头预判大小，避免大文件撑爆内存
     filename = file.filename or "audio.wav"
     ext = os.path.splitext(filename)[1].lower()
     max_size = MAX_VIDEO_SIZE if ext in VIDEO_EXTENSIONS else MAX_AUDIO_SIZE
 
-    # 扩展名白名单（音频 + 视频），给出完整的支持清单
-    if ext not in ALLOWED_EXTENSIONS and ext not in VIDEO_EXTENSIONS:
+    # 扩展名白名单（音频 + 视频）；会议切片是浏览器连续 webm 片段，跳过白名单与严格探测
+    if not is_chunk and ext not in ALLOWED_EXTENSIONS and ext not in VIDEO_EXTENSIONS:
         raise HTTPException(
             status_code=400,
             detail=(
@@ -141,7 +144,8 @@ async def transcribe(
         limit_mb = max_size // 1024 // 1024
         raise HTTPException(status_code=400, detail=f"文件大小超过限制（最大 {limit_mb}MB）")
 
-    if ext not in VIDEO_EXTENSIONS:
+    # 整文件走完整校验；会议切片只做非空/大小拦截，格式交给 ASR 解码器判定
+    if not is_chunk and ext not in VIDEO_EXTENSIONS:
         try:
             validate_upload(filename, content)
         except AudioValidationError as e:
@@ -151,10 +155,15 @@ async def transcribe(
     try:
         temp_path = save_temp_audio(content, ext)
 
+        # 严格媒体探测只用于整文件；切片 webm 可能缺少容器头，av.open 探测会误判，
+        # 这里对切片降级为“探测失败仅记日志，交给 whisper 解码器决定是否可用”。
         try:
             _probe_media(temp_path)
         except AudioValidationError as e:
-            raise HTTPException(status_code=400, detail=e.message)
+            if is_chunk:
+                logger.warning("会议切片媒体探测未通过，交由解码器判定: %s", e.message)
+            else:
+                raise HTTPException(status_code=400, detail=e.message)
 
         # 在线程池中跑 ASR，不堵事件循环
         result = await run_in_threadpool(asr.transcribe_with_timing, temp_path, language)

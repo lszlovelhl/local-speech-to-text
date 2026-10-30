@@ -1023,6 +1023,12 @@ function resolveSubmitError(err) {
 }
 
 // ---------- 文件转写结果渲染（录音上传 / 单文件上传共用） ----------
+// LCD 屏自动滚到底，保证最新识别文字可见（边录边看）
+function scrollLcdToBottom() {
+    if (!resultText) return;
+    resultText.scrollTop = resultText.scrollHeight;
+}
+
 function applyFileResult(data, duration, audioBlob) {
     const okText = (typeof data.text === "string" ? data.text : "").trim();
     // 强制语言模式下被过滤为空时，给出明确的“切换语言”引导，而不是笼统说没声音
@@ -1035,6 +1041,7 @@ function applyFileResult(data, duration, audioBlob) {
     void resultText.offsetWidth;
     resultText.classList.add("fade-in");
     resultText.textContent = okText || emptyHint;
+    scrollLcdToBottom();
     lastResultText = okText;
     metaLang.textContent = data.language || currentLang;
     metaDuration.textContent = Number.isFinite(data.duration_seconds) ? data.duration_seconds : "--";
@@ -1226,6 +1233,8 @@ async function submitAudio(blob, filename, isChunk = false, duration = 0, audioB
     const fd = new FormData();
     fd.append("file", blob, filename);
     fd.append("language", currentLang);
+    // 会议切片标记为 chunk：后端放宽 webm 片段的严格媒体探测，失败也按单片隔离
+    fd.append("source", isChunk ? "chunk" : "file");
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), isChunk ? CHUNK_TIMEOUT_MS : SUBMIT_TIMEOUT_MS);
@@ -1253,6 +1262,7 @@ async function submitAudio(blob, filename, isChunk = false, duration = 0, audioB
                 lastResultText = resultText.textContent;
                 // 记录单片切片（含绝对时间戳），停止合并时换算为相对时间分段
                 conferenceSlices.push({ text: chunkText, ts: Date.now() });
+                scrollLcdToBottom();
             }
         } else {
             applyFileResult(data, duration, audioBlob);
@@ -1336,6 +1346,7 @@ btnExport.addEventListener("click", () => {
 btnClear.addEventListener("click", () => {
     resultText.textContent = "识别文字将显示在这里…";
     resultText.classList.add("placeholder");
+    resultText.scrollTop = 0;
     segmentList.classList.add("hidden");
     segmentList.innerHTML = "";
     btnCopy.disabled = true;
