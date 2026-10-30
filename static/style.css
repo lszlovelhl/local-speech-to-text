@@ -457,6 +457,16 @@ body.mode-conference .stickers-conf .sticker {
     color: #636366;
     font-variant-numeric: tabular-nums;
 }
+.tape-headline {
+    display: block;
+    max-height: 28px;
+    line-height: 1.3;
+    font-size: 10px;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: clip; /* 不使用省略号，平滑逐字呈现最新一句 */
+}
 
 /* VU Meter */
 .vu-meter {

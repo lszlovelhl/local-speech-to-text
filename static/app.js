@@ -78,6 +78,7 @@ const reelLeft = $("reelLeft");
 const reelRight = $("reelRight");
 const vuBar = $("vuBar");
 const tapeTime = $("tapeTime");
+const tapeHeadline = $("tapeHeadline");
 const themeToggle = $("themeToggle");
 const uploadProgress = $("uploadProgress");
 const uploadProgressBar = $("uploadProgressBar");
@@ -852,8 +853,10 @@ async function startRecording() {
         hintText.textContent = currentMode === "conference" ? "会议模式：正在监听…" : "正在录音，点击按钮或空格停止";
 
         // Clear previous result
+        smoothFlushText(resultText);
         resultText.textContent = "";
         resultText.classList.add("placeholder");
+        resetHeadline();
         segmentList.classList.add("hidden");
         segmentList.innerHTML = "";
         lastResultText = "";
@@ -923,6 +926,7 @@ function cleanupRecording() {
     if (!isProcessing) setRecordButton("idle");
     timerText.textContent = "00:00";
     tapeTime.textContent = "00:00";
+    resetHeadline();
     if (currentMode === "conference") {
         setStatus("idle", "待机");
         hintText.textContent = "可以再次录音，或按空格键继续";
@@ -1029,6 +1033,50 @@ function scrollLcdToBottom() {
     resultText.scrollTop = resultText.scrollHeight;
 }
 
+// ---------- 平滑输出渲染器：逐字渐进显示，标签头条与 LCD 逐字稿共用 ----------
+// 目标文本与可见前缀分离，按帧补字，避免文字成片弹出；目标增长时继续续写，不重打已显示内容
+const smoothRenders = new Map();
+function smoothSetText(el, target, { speed = 2, onTick = null } = {}) {
+    if (!el) return;
+    target = target || "";
+    const old = smoothRenders.get(el);
+    if (old) clearInterval(old.timer);
+    let shown = old ? old.shown : (el.textContent || "");
+    if (target.length < shown.length) shown = target; // 文本被刷新为更短内容时立即收缩
+    const state = { timer: null, target, shown };
+    smoothRenders.set(el, state);
+    el.textContent = shown;
+    if (shown === target) { onTick && onTick(); return; }
+    state.timer = setInterval(() => {
+        state.shown = state.target.slice(0, state.shown.length + speed);
+        el.textContent = state.shown;
+        onTick && onTick();
+        if (state.shown.length >= state.target.length) {
+            clearInterval(state.timer);
+            state.timer = null;
+        }
+    }, 16);
+}
+// 立刻渲染到目标全文（清空/错误提示等不需要动画的场景）
+function smoothFlushText(el) {
+    const s = smoothRenders.get(el);
+    if (s) { clearInterval(s.timer); s.timer = null; el.textContent = s.target; }
+    smoothRenders.delete(el);
+}
+// 取最后一句作为磁带标签头条，按中英文句读切分
+function latestSegment(text) {
+    if (!text) return "";
+    const parts = text.split(/[。！？!?\n；;]/).map((s) => s.trim()).filter(Boolean);
+    return parts.length ? parts[parts.length - 1] : text.trim();
+}
+function updateHeadline(text) {
+    smoothSetText(tapeHeadline, latestSegment(text) || "STT-001", { speed: 2 });
+}
+function resetHeadline() {
+    smoothFlushText(tapeHeadline);
+    tapeHeadline.textContent = "STT-001";
+}
+
 function applyFileResult(data, duration, audioBlob) {
     const okText = (typeof data.text === "string" ? data.text : "").trim();
     // 强制语言模式下被过滤为空时，给出明确的“切换语言”引导，而不是笼统说没声音
@@ -1040,9 +1088,15 @@ function applyFileResult(data, duration, audioBlob) {
     resultText.classList.remove("placeholder", "fade-in");
     void resultText.offsetWidth;
     resultText.classList.add("fade-in");
-    resultText.textContent = okText || emptyHint;
-    scrollLcdToBottom();
     lastResultText = okText;
+    if (okText) {
+        smoothSetText(resultText, okText, { speed: 2, onTick: scrollLcdToBottom });
+        updateHeadline(okText);
+    } else {
+        smoothFlushText(resultText);
+        resultText.textContent = emptyHint;
+        resetHeadline();
+    }
     metaLang.textContent = data.language || currentLang;
     metaDuration.textContent = Number.isFinite(data.duration_seconds) ? data.duration_seconds : "--";
     metaProcessing.textContent = Number.isFinite(data.processing_seconds) ? data.processing_seconds : "--";
@@ -1255,14 +1309,14 @@ async function submitAudio(blob, filename, isChunk = false, duration = 0, audioB
             const chunkText = (typeof data.text === "string" ? data.text : "").trim();
             if (chunkText) {
                 resultText.classList.remove("placeholder");
-                const needSpace = resultText.textContent &&
-                    !resultText.textContent.endsWith(" ") &&
-                    !resultText.textContent.endsWith("…");
-                resultText.textContent += (needSpace ? " " : "") + chunkText + " ";
-                lastResultText = resultText.textContent;
+                // committed 全文独立保存，可见层由渲染器逐字平滑续写
+                lastResultText = lastResultText
+                    ? lastResultText.trimEnd() + " " + chunkText
+                    : chunkText;
+                smoothSetText(resultText, lastResultText, { speed: 2, onTick: scrollLcdToBottom });
                 // 记录单片切片（含绝对时间戳），停止合并时换算为相对时间分段
                 conferenceSlices.push({ text: chunkText, ts: Date.now() });
-                scrollLcdToBottom();
+                updateHeadline(lastResultText);
             }
         } else {
             applyFileResult(data, duration, audioBlob);
@@ -1344,9 +1398,11 @@ btnExport.addEventListener("click", () => {
 });
 
 btnClear.addEventListener("click", () => {
+    smoothFlushText(resultText);
     resultText.textContent = "识别文字将显示在这里…";
     resultText.classList.add("placeholder");
     resultText.scrollTop = 0;
+    resetHeadline();
     segmentList.classList.add("hidden");
     segmentList.innerHTML = "";
     btnCopy.disabled = true;
